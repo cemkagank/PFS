@@ -31,8 +31,6 @@ private:
     Vector2 CalculatePropertyGradient(Vector2 point);
     Vector2 CalculatePressureForce(Vector2 point);
 
-
-
 public:
     Engine();
     void Draw();
