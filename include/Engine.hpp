@@ -8,14 +8,8 @@
 class Engine {
 
 private:
+
     int simulation_size = 3000;
-    float smoothing_radius = 50;
-    float threshold = 0.8f;
-
-    float gravity = 0.1;    
-    float targetDensity = 1;
-    float pressureMultiplier = 0.0001;
-
     std::vector<Particle> particles;
     std::vector<float> densities = std::vector<float>(simulation_size, 1);
     std::vector<Vector2> forces;
@@ -32,6 +26,12 @@ private:
     Vector2 CalculatePressureForce(Vector2 point);
 
 public:
+    float smoothing_radius = 50;
+    float threshold = 0.8f;
+
+    float gravity = 0.1;    
+    float targetDensity = 1;
+    float pressureMultiplier = 0.0001;
     Engine();
     void Draw();
     void Update();

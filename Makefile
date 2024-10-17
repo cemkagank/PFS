@@ -8,7 +8,7 @@ CXXFLAGS = -Wall -std=c++11 -fopenmp -Iinclude -lGL -lraylib -O2
 TARGET = bin/fluids
 
 # Define the source files (with paths)
-SRCS = src/main.cpp src/Window.cpp  src/Engine.cpp src/Particle.cpp
+SRCS = src/main.cpp src/Window.cpp  src/Engine.cpp src/Particle.cpp src/imgui_draw.cpp src/imgui_widgets.cpp src/imgui_tables.cpp src/imgui.cpp src/rlImGui.cpp
 
 # Define the object directory
 OBJDIR = obj

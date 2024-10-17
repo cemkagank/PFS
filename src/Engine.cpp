@@ -6,7 +6,8 @@
 #include <omp.h>
 
 // TODO: Transform to 3D
-
+// TODO: Add camera
+// FIX: simulatin_size to update vectors
 
 
 Engine::Engine() {
