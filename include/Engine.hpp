@@ -14,7 +14,7 @@ private:
 
     float gravity = 0.1;    
     float targetDensity = 1;
-    float pressureMultiplier = 0.00001;
+    float pressureMultiplier = 0.0001;
 
     std::vector<Particle> particles;
     std::vector<float> densities = std::vector<float>(simulation_size, 1);

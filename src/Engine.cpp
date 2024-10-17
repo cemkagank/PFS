@@ -5,6 +5,10 @@
 #include <raymath.h>
 #include <omp.h>
 
+// TODO: Transform to 3D
+
+
+
 Engine::Engine() {
     SetRandomSeed(time(NULL));
 }
@@ -23,12 +27,16 @@ void Engine::SimulationStep() {
         particles[i].ApplyForce({0,gravity * GetFrameTime()});
     }
 
+    //TODO: Add viscosity
+
     // Apply pressure
     #pragma omp parallel for
     for (int i = 0; i < particles.size(); i++) {
         particles[i].ApplyForce(pressures[i]);
     }
-
+    
+    // TODO: Fix the edges
+    // TODO: Smarter way to handle collisions
     // Update positions and resolve collisions
     #pragma omp parallel for
     for (int i = 0; i < particles.size(); i++) {
