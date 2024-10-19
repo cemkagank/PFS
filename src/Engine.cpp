@@ -7,8 +7,8 @@
 
 // TODO: Transform to 3D
 // TODO: Add camera
-// FIX: simulatin_size to update vectors
-
+// FIXME: simulatin_size to update vectors
+// TODO : replave vector or minimize allocation, copy and move operations --emplace_back and reserve
 
 Engine::Engine() {
     SetRandomSeed(time(NULL));
