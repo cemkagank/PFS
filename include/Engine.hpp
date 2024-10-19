@@ -9,11 +9,11 @@ class Engine {
 
 private:
 
-    int simulation_size = 3000;
+    int simulation_size = 2000;
     std::vector<Particle> particles;
-    std::vector<float> densities = std::vector<float>(simulation_size, 1);
+    std::vector<float> densities ;
     std::vector<Vector2> forces;
-    std::vector<Vector2> pressures = std::vector<Vector2>(simulation_size, {0,0});
+    std::vector<Vector2> pressures;
     std::vector<Vector2> gradients;
 
     float SmoothingKernel(float distance);

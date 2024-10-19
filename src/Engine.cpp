@@ -12,6 +12,11 @@
 
 Engine::Engine() {
     SetRandomSeed(time(NULL));
+    particles.reserve(simulation_size);
+    densities.reserve(simulation_size);
+    pressures.reserve(simulation_size);
+    forces.reserve(simulation_size);
+
 }
 
 void Engine::Draw() {
@@ -27,6 +32,7 @@ void Engine::SimulationStep() {
     for (int i = 0; i < particles.size(); i++) {
         particles[i].ApplyForce({0,gravity * GetFrameTime()});
     }
+    
 
     //TODO: Add viscosity
 
@@ -44,15 +50,21 @@ void Engine::SimulationStep() {
         particles[i].Update();
         if (particles[i].get_position().y > 900) {
             particles[i].SetPosition({particles[i].get_position().x, 894});
-        }
-        if (particles[i].get_position().y < 0) {
+            particles[i].SetVelocity({0,0});  
+            particles[i].ApplyForce({0, -gravity * 3});
+        } else if (particles[i].get_position().y < 0) {
             particles[i].SetPosition({particles[i].get_position().x, 10});
+            particles[i].SetVelocity({0,0});  
+            particles[i].ApplyForce({0, gravity* 3});
         }
         if (particles[i].get_position().x > 1600) {
             particles[i].SetPosition({1594, particles[i].get_position().y});
-        }
-        if (particles[i].get_position().x < 0) {
+            particles[i].SetVelocity({0,0});  
+            particles[i].ApplyForce({-gravity * 3, 0});
+        } else if (particles[i].get_position().x < 0) {
             particles[i].SetPosition({10, particles[i].get_position().y});
+            particles[i].SetVelocity({0,0});  
+            particles[i].ApplyForce({gravity * 3, 0});
         }
 
     }
@@ -86,7 +98,7 @@ void Engine::Populate() {
     int count = 0;
     for (int i = 800; i < 1200; i+= 8) {
         for (int j = 400; j < 600; j+= 8) {
-            particles.push_back(Particle(i,j));
+            particles.emplace_back(Particle(i,j));
             count++;
         }
     }
