@@ -6,6 +6,9 @@
 #include <chrono>
 #include <sys/resource.h>
 
+//TODO: Add a way to change the number of particles
+//TODO: Get all UI stuff into a separate file
+
 long get_mem() {
     struct rusage usage;
     getrusage(RUSAGE_SELF, &usage);
