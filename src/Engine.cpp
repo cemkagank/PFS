@@ -201,7 +201,7 @@ void Engine::ShowDensity() {
     Vector2 pos = GetMousePosition();
     float density = CalculateDensity(pos);
     DrawCircleLinesV(pos, smoothing_radius, RED);
-    DrawText(std::to_string(density).c_str(), pos.x, pos.y - 80, 20, RED);
+    DrawText(std::to_string(density).c_str(), pos.x, pos.y - 80, 20, GREEN);
 }
 
 void Engine::DrawGradinet() {

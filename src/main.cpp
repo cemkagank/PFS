@@ -39,6 +39,12 @@ int main() {
         rlImGuiBegin();
         ImGui::Begin("Settings");
         ImGui::SameLine(ImGui::Checkbox("Show Density", &showDensity));
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::BeginTooltip();
+            ImGui::Text("Press and hold left mouse button to show density");
+            ImGui::EndTooltip();
+        }
         ImGui::Checkbox("Diagnostics", &diag);
         ImGui::SliderFloat("Smoothing Radius", &engine.smoothing_radius, 1, 100);
         ImGui::SliderFloat("Threshold", &engine.threshold, 0.1, 1);
@@ -47,6 +53,9 @@ int main() {
         ImGui::SliderFloat("Pressure Multiplier", &engine.pressureMultiplier, 0.0001f, 0.0010f, "%.4f");
         ImGui::ColorEdit3("Particle Color", Particle::color);
         ImGui::SliderFloat("Particle Radius", &Particle::radius, 1, 10);
+        if (ImGui::Button("Pause / Play")) {
+            paused = !paused;
+        }
         ImGui::End();
 
         if (diag)
