@@ -7,11 +7,10 @@
 
 // TODO: Transform to 3D
 // TODO: Add camera
-// FIXME: simulatin_size to update vectors
+// ^ FIXME: simulatin_size to update vectors
 // TODO : replave vector or minimize allocation, copy and move operations --emplace_back and reserve
 
 Engine::Engine() {
-    SetRandomSeed(time(NULL));
     particles.reserve(simulation_size);
     densities.reserve(simulation_size);
     pressures.reserve(simulation_size);
@@ -27,12 +26,12 @@ void Engine::Draw() {
 
 void Engine::SimulationStep() {
 
-    // Apply gravity 
+    // Apply gravity
     #pragma omp parallel for
     for (int i = 0; i < particles.size(); i++) {
         particles[i].ApplyForce({0,gravity * GetFrameTime()});
     }
-    
+
 
     //TODO: Add viscosity
 
@@ -41,29 +40,29 @@ void Engine::SimulationStep() {
     for (int i = 0; i < particles.size(); i++) {
         particles[i].ApplyForce(pressures[i]);
     }
-    
+
     // TODO: Fix the edges
     // TODO: Smarter way to handle collisions
-    // Update positions and resolve collisions
+    //  Update positions and resolve collisions
     #pragma omp parallel for
     for (int i = 0; i < particles.size(); i++) {
         particles[i].Update();
         if (particles[i].get_position().y > 900) {
             particles[i].SetPosition({particles[i].get_position().x, 894});
-            particles[i].SetVelocity({0,0});  
+            particles[i].SetVelocity({0,0});
             particles[i].ApplyForce({0, -gravity * 3});
         } else if (particles[i].get_position().y < 0) {
             particles[i].SetPosition({particles[i].get_position().x, 10});
-            particles[i].SetVelocity({0,0});  
+            particles[i].SetVelocity({0,0});
             particles[i].ApplyForce({0, gravity* 3});
         }
         if (particles[i].get_position().x > 1600) {
             particles[i].SetPosition({1594, particles[i].get_position().y});
-            particles[i].SetVelocity({0,0});  
+            particles[i].SetVelocity({0,0});
             particles[i].ApplyForce({-gravity * 3, 0});
         } else if (particles[i].get_position().x < 0) {
             particles[i].SetPosition({10, particles[i].get_position().y});
-            particles[i].SetVelocity({0,0});  
+            particles[i].SetVelocity({0,0});
             particles[i].ApplyForce({gravity * 3, 0});
         }
 
@@ -84,7 +83,6 @@ void Engine::Update() {
         pressures[i] = Vector2Scale(pressureForce, 1.0f / densities[i]);
     }
 
-    SetWindowTitle(TextFormat("Fluids - %i",GetFPS()));
 }
 
 void Engine::Reset() {
@@ -103,6 +101,10 @@ void Engine::Populate() {
         }
     }
     simulation_size = count;
+    densities.resize(count);
+    pressures.resize(count);
+    forces.resize(count);
+    particles.shrink_to_fit();
 }
 
 float Engine::CalculateDensity(Vector2 point) {
@@ -158,7 +160,7 @@ Vector2 Engine::CalculatePropertyGradient(Vector2 point) {
 Vector2 Engine::CalculatePressureForce(Vector2 point) {
     Vector2 gradient = {0,0};
     const float mass = 1000000;
-    float dentPoint = CalculateDensity(point); 
+    float dentPoint = CalculateDensity(point);
     for (int i = 0; i < particles.size(); i++) {
         Vector2 dist = Vector2Subtract(particles[i].get_position(), point);
         float distance = Vector2Length(dist);
@@ -196,7 +198,6 @@ float Engine::SmoothingKernelDerivative(float dist) {
     return 0;
 }
 
-#pragma region UI
 void Engine::ShowDensity() {
     Vector2 pos = GetMousePosition();
     float density = CalculateDensity(pos);
@@ -213,7 +214,3 @@ void Engine::DrawGradinet() {
         }
     }
 }
-
-#pragma endregion
-
-
