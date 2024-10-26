@@ -1,8 +1,11 @@
 # Define the compiler
 CXX = g++
 
-# Define compiler flags
-CXXFLAGS = -Wall -std=c++11 -fopenmp -Iinclude -lGL -lraylib -O2
+# Define compiler flags and include path for raylib
+CXXFLAGS = -Wall -std=c++11 -fopenmp -Iinclude -I/usr/local/include -O2
+
+# Define linker flags and link the raylib library from /usr/local/lib
+LDFLAGS = -L/usr/local/lib -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
 
 # Define the target executable (inside bin/)
 TARGET = bin/fluids
@@ -25,22 +28,13 @@ all: $(TARGET)
 # Rule to link the object files and create the executable in the bin/ directory
 $(TARGET): $(OBJS)
 	@mkdir -p $(BINDIR)  # Create the bin/ directory if it doesn't exist
-	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJS)
+	$(CXX) -o $(TARGET) $(OBJS) $(CXXFLAGS) $(LDFLAGS)
 
 # Rule to compile each .cpp file into a .o file in the obj/ directory, and generate dependency files
 $(OBJDIR)/%.o: src/%.cpp
 	@mkdir -p $(OBJDIR)  # Create the obj/ directory if it doesn't exist
 	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
 
-# Include the generated dependency files
--include $(OBJS:.o=.d)
-
-# Clean up the project (remove object files and executable)
-clean:
-	rm -rf $(OBJDIR) $(BINDIR)
-
 run:
-	./$(TARGET)
-
-# Phony targets (not associated with files)
-.PHONY: all clean
+	make
+	./bin/fluids
