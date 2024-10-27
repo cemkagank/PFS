@@ -1,11 +1,3 @@
-
-## 🔗 Links
-
-[![linkedin](https://img.shields.io/badge/linkedin-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/)
-
-[![twitter](https://img.shields.io/badge/twitter-1DA1F2?style=for-the-badge&logo=twitter&logoColor=white)](https://twitter.com/)
-
-
 # Fluids 
 
 This project is a particle-based computational fluid dynamics (CFD) application, developed as part of a thesis project to explore and analyze state-of-the-art fluid simulation techniques. The application uses C++, raylib for visualization, and ImGui for user interaction, with plans to explore CUDA for enhanced computational performance.
