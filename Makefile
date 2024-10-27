@@ -1,7 +1,7 @@
 # Define the compiler
 CXX = g++
 
-# Define compiler flags and include path for raylib
+# Define compiler flags and include paths
 CXXFLAGS = -Wall -std=c++11 -fopenmp -Iinclude -I/usr/local/include -O2
 
 # Define linker flags and link the raylib library from /usr/local/lib
@@ -35,6 +35,17 @@ $(OBJDIR)/%.o: src/%.cpp
 	@mkdir -p $(OBJDIR)  # Create the obj/ directory if it doesn't exist
 	$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
 
+# Include the generated dependency files
+-include $(OBJS:.o=.d)
+
+# Clean up the project (remove object files and executable)
+clean:
+	rm -rf $(OBJDIR) $(BINDIR)
+
+# Run the executable after building
 run:
-	make
-	./bin/fluids
+	make all
+	./$(TARGET)
+
+# Phony targets (not associated with files)
+.PHONY: all clean run

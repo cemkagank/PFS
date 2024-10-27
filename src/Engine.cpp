@@ -193,7 +193,7 @@ float Engine::SmoothingKernel(float dist) {
 
 float Engine::SmoothingKernelDerivative(float dist) {
     if (dist < smoothing_radius) {
-        float scale = 12  / (PI * std::pow(smoothing_radius, 4));
+        float scale = 12  / (PI * std::pow(smoothing_radius, 4)); 
         return (dist - smoothing_radius) * scale;
     }
     return 0;
@@ -202,16 +202,6 @@ float Engine::SmoothingKernelDerivative(float dist) {
 void Engine::ShowDensity() {
     Vector2 pos = GetMousePosition();
     float density = CalculateDensity(pos);
-    DrawCircleLinesV(pos, smoothing_radius, RED);
+    DrawCircleLinesV(pos, smoothing_radius, GREEN);
     DrawText(std::to_string(density).c_str(), pos.x, pos.y - 80, 20, GREEN);
-}
-
-void Engine::DrawGradinet() {
-    for (int i = 4; i < 1600; i+=8) {
-        for (int j = 4; j < 900; j+=8) {
-            Vector2 pos = {i,j};
-            Vector2 grad = CalculatePropertyGradient(pos);
-            DrawLineV(pos, Vector2Add(pos, Vector2Scale(grad, 0.1)), RED);
-        }
-    }
 }

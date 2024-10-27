@@ -10,7 +10,6 @@ class Window {
     Window(int w , int h);
     void Init();
 
-
 };
 
 

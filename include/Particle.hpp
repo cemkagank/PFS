@@ -4,7 +4,7 @@
 
 class Particle {
 private:
-    Vector2 position;
+    Vector2 position = {0,0};
     Vector2 velocity;
     Color convert_to_color(float r, float g, float b);
 

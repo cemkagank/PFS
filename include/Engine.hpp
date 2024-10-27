@@ -41,7 +41,6 @@ public:
     void Populate();
     void ShowDensity();
 
-    void DrawGradinet();
 
 
 };
