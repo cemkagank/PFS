@@ -2,7 +2,7 @@
 CXX = g++
 
 # Define compiler flags and include paths
-CXXFLAGS = -Wall -std=c++11 -fopenmp -Iinclude -I/usr/local/include -O2
+CXXFLAGS = -Wall -g -std=c++11 -fopenmp -Iinclude -I/usr/local/include -O2
 
 # Define linker flags and link the raylib library from /usr/local/lib
 LDFLAGS = -L/usr/local/lib -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
@@ -39,6 +39,7 @@ $(OBJDIR)/%.o: src/%.cpp
 -include $(OBJS:.o=.d)
 
 # Clean up the project (remove object files and executable)
+
 clean:
 	rm -rf $(OBJDIR) $(BINDIR)
 

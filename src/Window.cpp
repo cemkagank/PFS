@@ -3,7 +3,8 @@
 Window::Window(int w, int h) {
     this->WIDTH = w;
     this->HEIGHT = h;
-    SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT);
+    SetConfigFlags( FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT);
+    SetTargetFPS(60);
     SetTraceLogLevel(LOG_ERROR);
 }
 

@@ -6,11 +6,13 @@ float Particle::color[4] = {0, 0, 1, 1};
 
 Particle::Particle(Vector2 pos) {
     this->position = pos;
+    this->velocity = {0,0};
 }
 
 Particle::Particle(float x , float y) {
     this->position.x = x;
     this->position.y = y;
+    this->velocity = {0,0};
 
 }
 

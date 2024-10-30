@@ -5,7 +5,7 @@
 #include <iostream>
 #include <chrono>
 #include <sys/resource.h>
-
+#include <thread>
 // TODO: Add a way to change the number of particles
 // TODO: Get all UI stuff into a separate file
 
@@ -26,12 +26,27 @@ int main() {
     auto updatems = std::chrono::milliseconds(0);
     auto simulationms = std::chrono::microseconds(0);
     rlImGuiSetup(true);
+
+    Camera2D cam = {0};
+    cam.target = Vector2{800,450};
+    cam.offset = Vector2{800,450};
+    cam.rotation = 0;
+    cam.zoom = 1.0f;
+
+
     while (!WindowShouldClose())
     {
+        if (IsKeyPressed(KEY_Q)) cam.zoom -= 0.1f; // Zoom out
         BeginDrawing();
         ClearBackground(DARKGRAY);
+        
+        BeginMode2D(cam);
         engine.Draw();
+        EndMode2D();
 
+        if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
+            engine.Repopulate(GetMousePosition());
+        }
         if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && showDensity) {
             engine.ShowDensity();
         }
@@ -55,6 +70,13 @@ int main() {
         ImGui::SliderFloat("Particle Radius", &Particle::radius, 1, 10);
         if (ImGui::Button("Pause / Play")) {
             paused = !paused;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset")) {
+            engine.Reset();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Populate")) {
         }
         ImGui::End();
 

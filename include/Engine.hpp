@@ -2,6 +2,7 @@
 #define ENGINE_HPP
 #include <vector>
 #include <raylib.h>
+#include <functional>
 #include "Particle.hpp"
 
 
@@ -9,9 +10,11 @@ class Engine {
 
 private:
 
-    int simulation_size = 2000;
+    int simulation_size = 1250;
     std::vector<Particle> particles;
-    std::vector<float> densities ;
+    std::vector<float> densities;
+    std::vector<int> start_indices;
+    std::vector<std::pair<int, unsigned int>> spatial_lookup;
     std::vector<Vector2> forces;
     std::vector<Vector2> pressures;
     std::vector<Vector2> gradients;
@@ -37,11 +40,17 @@ public:
     void Update();
     void SimulationStep();
     void Reset();
-
+    void Repopulate(Vector2 pos);
     void Populate();
     void ShowDensity();
-
-
+    void ResolveCollisions();
+    void UpdateSpatialLookup();
+    void ForEachPointinRadius(Vector2 point);
+    std::pair<int, int> PositionToCellCoord(Vector2 point);
+    unsigned int HashCell(int cellx, int celly);
+    unsigned int GetKeyFromHash(unsigned int hash);
+  
+    
 
 };
 
