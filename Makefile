@@ -2,7 +2,7 @@
 CXX = g++
 
 # Define compiler flags and include paths
-CXXFLAGS = -Wall -g -std=c++11 -fopenmp -Iinclude -I/usr/local/include -O2
+CXXFLAGS = -Wall -g -std=gnu++17 -fopenmp -Iinclude -I/usr/local/lib -O2
 
 # Define linker flags and link the raylib library from /usr/local/lib
 LDFLAGS = -L/usr/local/lib -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
@@ -11,7 +11,7 @@ LDFLAGS = -L/usr/local/lib -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
 TARGET = bin/fluids
 
 # Define the source files (with paths)
-SRCS = src/main.cpp src/Window.cpp src/Engine.cpp src/Particle.cpp src/imgui_draw.cpp src/imgui_widgets.cpp src/imgui_tables.cpp src/imgui.cpp src/rlImGui.cpp
+SRCS = src/main.cpp src/Window.cpp src/Engine.cpp  src/imgui_draw.cpp src/imgui_widgets.cpp src/imgui_tables.cpp src/imgui.cpp src/rlImGui.cpp
 
 # Define the object directory
 OBJDIR = obj

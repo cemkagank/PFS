@@ -3,7 +3,6 @@
 #include <vector>
 #include <raylib.h>
 #include <functional>
-#include "Particle.hpp"
 
 
 class Engine {
@@ -11,7 +10,8 @@ class Engine {
 private:
 
     int simulation_size = 1250;
-    std::vector<Particle> particles;
+    std::vector<Vector2> positions;
+    std::vector<Vector2> velocities;
     std::vector<float> densities;
     std::vector<int> start_indices;
     std::vector<std::pair<int, unsigned int>> spatial_lookup;
@@ -29,6 +29,8 @@ private:
     Vector2 CalculatePressureForce(Vector2 point);
 
 public:
+    static float particle_radius;
+    static float particle_color[4];
     float smoothing_radius = 50;
     float threshold = 0.8f;
 
@@ -49,7 +51,7 @@ public:
     std::pair<int, int> PositionToCellCoord(Vector2 point);
     unsigned int HashCell(int cellx, int celly);
     unsigned int GetKeyFromHash(unsigned int hash);
-  
+    unsigned int HashPosition(int x, int y);
     
 
 };

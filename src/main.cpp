@@ -6,6 +6,7 @@
 #include <chrono>
 #include <sys/resource.h>
 #include <thread>
+#include <raymath.h>
 // TODO: Add a way to change the number of particles
 // TODO: Get all UI stuff into a separate file
 
@@ -33,10 +34,35 @@ int main() {
     cam.rotation = 0;
     cam.zoom = 1.0f;
 
+    Vector2 previousMousePosition = {0, 0};
+    bool isDragging = false;
 
     while (!WindowShouldClose())
     {
-        if (IsKeyPressed(KEY_Q)) cam.zoom -= 0.1f; // Zoom out
+        float wheel = GetMouseWheelMove();
+        if (wheel != 0) {
+            cam.zoom += wheel * 0.05f;  // Adjust 0.05f to change zoom sensitivity
+            cam.zoom = Clamp(cam.zoom, 0.3f, 1.0f);  // Limit zoom range
+        }
+        
+        // Add camera panning logic
+        if (IsMouseButtonPressed(MOUSE_MIDDLE_BUTTON)) {
+            isDragging = true;
+            previousMousePosition = GetMousePosition();
+        }
+        if (IsMouseButtonReleased(MOUSE_MIDDLE_BUTTON)) {
+            isDragging = false;
+        }
+        if (isDragging) {
+            Vector2 currentMousePosition = GetMousePosition();
+            Vector2 delta = {
+                (previousMousePosition.x - currentMousePosition.x) / cam.zoom,
+                (previousMousePosition.y - currentMousePosition.y) / cam.zoom
+            };
+            cam.target = Vector2Add(cam.target, delta);
+            previousMousePosition = currentMousePosition;
+        }
+
         BeginDrawing();
         ClearBackground(DARKGRAY);
         
@@ -62,12 +88,13 @@ int main() {
         }
         ImGui::Checkbox("Diagnostics", &diag);
         ImGui::SliderFloat("Smoothing Radius", &engine.smoothing_radius, 1, 100);
-        ImGui::SliderFloat("Threshold", &engine.threshold, 0.1, 1);
+        // ImGui::SliderFloat("Threshold", &engine.threshold, 0.1, 1);
         ImGui::SliderFloat("Gravity", &engine.gravity, 0.1, 1);
         ImGui::SliderFloat("Target Density", &engine.targetDensity, 0.1, 7);
+        ImGui::SliderFloat("Camera Zoom", &cam.zoom, 0.3, 1);
         ImGui::SliderFloat("Pressure Multiplier", &engine.pressureMultiplier, 0.0001f, 0.0010f, "%.4f");
-        ImGui::ColorEdit3("Particle Color", Particle::color);
-        ImGui::SliderFloat("Particle Radius", &Particle::radius, 1, 10);
+        ImGui::ColorEdit3("Particle Color", engine.particle_color);
+        ImGui::SliderFloat("Particle Radius", &engine.particle_radius, 1, 10);
         if (ImGui::Button("Pause / Play")) {
             paused = !paused;
         }
