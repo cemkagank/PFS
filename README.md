@@ -36,8 +36,11 @@ This project is a particle-based computational fluid dynamics (CFD) application,
 ```bash
   git clone https://github.com/cemkagank/PFS
   cd PFS
-  make
-  make run
+  mkdir build
+  cmake ..
+  cd ..
+  cmake --build build/
+  ./build/bin/fluids
 ```
 
 ## Optimizations
