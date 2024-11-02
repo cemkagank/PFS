@@ -2,10 +2,8 @@
 #include "Engine.hpp"
 #include "imgui.h"
 #include "rlImGui.h"
-#include <iostream>
 #include <chrono>
 #include <sys/resource.h>
-#include <thread>
 #include <raymath.h>
 // TODO: Add a way to change the number of particles
 // TODO: Get all UI stuff into a separate file
@@ -28,11 +26,7 @@ int main() {
     auto simulationms = std::chrono::microseconds(0);
     rlImGuiSetup(true);
 
-    Camera2D cam = {0};
-    cam.target = Vector2{800,450};
-    cam.offset = Vector2{800,450};
-    cam.rotation = 0;
-    cam.zoom = 1.0f;
+    Camera2D cam = { Vector2 {800, 450}, Vector2 {800, 450}, 0, 1.0f };
 
     Vector2 previousMousePosition = {0, 0};
     bool isDragging = false;

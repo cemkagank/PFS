@@ -166,8 +166,8 @@ void Engine::Populate() {
     int count = 0;
     for (int i = 800; i < 1200; i+= 8) {
         for (int j = 400; j < 600; j+= 8) {
-            positions.push_back((Vector2){(float)i, (float)j});
-            velocities.push_back((Vector2){0.0f, 0.0f});
+            positions.push_back(Vector2{(float)i, (float)j});
+            velocities.push_back(Vector2{0.0f, 0.0f});
             count++;
         }
     }
@@ -181,8 +181,8 @@ void Engine::Repopulate(Vector2 pos) {
     for (int i = 0; i < 100; i++) {
         float x = pos.x + GetRandomValue(-10, 10);
         float y = pos.y + GetRandomValue(-10, 10);
-        positions.push_back((Vector2){x, y});
-        velocities.push_back((Vector2){0.0f, 0.0f});
+        positions.push_back(Vector2{x, y});
+        velocities.push_back(Vector2{0.0f, 0.0f});
     }
 }
 

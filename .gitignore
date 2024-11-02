@@ -1,9 +1,6 @@
-./.vscode
-./.vscode/
-./.vscode/*
-
 .vscode
-/.vscode
-/.vscode/
 obj
 .cache
+build
+compile_commands.json
+imgui.ini
