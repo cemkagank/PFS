@@ -3,8 +3,12 @@
 #include "imgui.h"
 #include "rlImGui.h"
 #include <chrono>
+#include <raylib.h>
 #include <sys/resource.h>
 #include <raymath.h>
+#include <rlgl.h>
+
+
 // TODO: Add a way to change the number of particles
 // TODO: Get all UI stuff into a separate file
 
@@ -15,7 +19,7 @@ long get_mem() {
 }
 
 int main() {
-    Window window = Window(1600,900);
+    Window window = Window(1920,1080);
     window.Init();
     Engine engine = Engine();
     engine.Populate();
@@ -26,51 +30,25 @@ int main() {
     auto simulationms = std::chrono::microseconds(0);
     rlImGuiSetup(true);
 
-    Camera2D cam = { Vector2 {800, 450}, Vector2 {800, 450}, 0, 1.0f };
 
-    Vector2 previousMousePosition = {0, 0};
-    bool isDragging = false;
+    Camera3D cam;
+    cam.target = {0,0,0};
+    cam.position = {20,20,20};
+    cam.up = {0,1,0};
+    cam.fovy = 45.0f;
+    cam.projection = CAMERA_PERSPECTIVE;
+    rlEnableDepthTest();
+
 
     while (!WindowShouldClose())
     {
-        float wheel = GetMouseWheelMove();
-        if (wheel != 0) {
-            cam.zoom += wheel * 0.05f;  // Adjust 0.05f to change zoom sensitivity
-            cam.zoom = Clamp(cam.zoom, 0.3f, 1.0f);  // Limit zoom range
-        }
-        
-        // Add camera panning logic
-        if (IsMouseButtonPressed(MOUSE_MIDDLE_BUTTON)) {
-            isDragging = true;
-            previousMousePosition = GetMousePosition();
-        }
-        if (IsMouseButtonReleased(MOUSE_MIDDLE_BUTTON)) {
-            isDragging = false;
-        }
-        if (isDragging) {
-            Vector2 currentMousePosition = GetMousePosition();
-            Vector2 delta = {
-                (previousMousePosition.x - currentMousePosition.x) / cam.zoom,
-                (previousMousePosition.y - currentMousePosition.y) / cam.zoom
-            };
-            cam.target = Vector2Add(cam.target, delta);
-            previousMousePosition = currentMousePosition;
-        }
+        UpdateCamera(&cam,CAMERA_FREE);
 
         BeginDrawing();
-        ClearBackground(DARKGRAY);
-        
-        BeginMode2D(cam);
-        engine.Draw();
-        EndMode2D();
-
-        if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
-            engine.Repopulate(GetMousePosition());
-        }
-        if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && showDensity) {
-            engine.ShowDensity();
-        }
-
+        ClearBackground(GRAY);
+        BeginMode3D(cam);
+            engine.Draw();
+        EndMode3D();
         rlImGuiBegin();
         ImGui::Begin("Settings");
         ImGui::SameLine(ImGui::Checkbox("Show Density", &showDensity));
@@ -85,7 +63,6 @@ int main() {
         // ImGui::SliderFloat("Threshold", &engine.threshold, 0.1, 1);
         ImGui::SliderFloat("Gravity", &engine.gravity, 0.1, 1);
         ImGui::SliderFloat("Target Density", &engine.targetDensity, 0.1, 7);
-        ImGui::SliderFloat("Camera Zoom", &cam.zoom, 0.3, 1);
         ImGui::SliderFloat("Pressure Multiplier", &engine.pressureMultiplier, 0.0001f, 0.0010f, "%.4f");
         ImGui::ColorEdit3("Particle Color", engine.particle_color);
         ImGui::SliderFloat("Particle Radius", &engine.particle_radius, 1, 10);
@@ -100,6 +77,7 @@ int main() {
         if (ImGui::Button("Populate")) {
         }
         ImGui::End();
+
 
         if (diag)
         {

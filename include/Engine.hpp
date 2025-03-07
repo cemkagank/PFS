@@ -2,36 +2,48 @@
 #define ENGINE_HPP
 #include <vector>
 #include <raylib.h>
-#include <functional>
+
+typedef struct box {
+    Vector3 max;
+    Vector3 min;
+    Vector3 boxSize = { max.x - min.x, max.y - min.y, max.z - min.z };
+    void Draw(){
+        DrawCubeWires(Vector3{ (min.x + max.x) / 2.0f, (min.y + max.y) / 2.0f, (min.z + max.z) / 2.0f }, boxSize.x, boxSize.y, boxSize.z, RED);
+    }
+} box;
 
 
 class Engine {
 
 private:
+    box container;
+    int simulation_size = 125;
+    std::vector<Vector3> positions;
+    std::vector<Vector3> velocities;
+    std::vector<Vector3> forces;
+    std::vector<Vector3> pressures;
+    std::vector<Vector3> gradients;
+    std::vector<float>   densities;
+    std::vector<Matrix> transforms;
 
-    int simulation_size = 1250;
-    std::vector<Vector2> positions;
-    std::vector<Vector2> velocities;
-    std::vector<float> densities;
+    Mesh particleMesh;
+    Material mat;
+    Shader shader;
+
     std::vector<int> start_indices;
     std::vector<std::pair<int, unsigned int>> spatial_lookup;
-    std::vector<Vector2> forces;
-    std::vector<Vector2> pressures;
-    std::vector<Vector2> gradients;
 
     float SmoothingKernel(float distance);
     float SmoothingKernelDerivative(float distance);
-    float CalculateDensity(Vector2 point);
-    float CalculateProperty(Vector2 point);
+    float CalculateDensity(Vector3 point);
     float DensityToPressure(float density);
     float CalculateSharedPressure(float dens1, float dens2);   
-    Vector2 CalculatePropertyGradient(Vector2 point);
-    Vector2 CalculatePressureForce(Vector2 point);
+    Vector3 CalculatePressureForce(Vector3 point);
 
 public:
     static float particle_radius;
     static float particle_color[4];
-    float smoothing_radius = 50;
+    float smoothing_radius = 4;
     float threshold = 0.8f;
 
     float gravity = 0.1;    
@@ -42,13 +54,11 @@ public:
     void Update();
     void SimulationStep();
     void Reset();
-    void Repopulate(Vector2 pos);
     void Populate();
-    void ShowDensity();
     void ResolveCollisions();
     void UpdateSpatialLookup();
-    void ForEachPointinRadius(Vector2 point);
-    std::pair<int, int> PositionToCellCoord(Vector2 point);
+    void ForEachPointinRadius(Vector3 point);
+    std::pair<int, int> PositionToCellCoord(Vector3 point);
     unsigned int HashCell(int cellx, int celly);
     unsigned int GetKeyFromHash(unsigned int hash);
     unsigned int HashPosition(int x, int y);
