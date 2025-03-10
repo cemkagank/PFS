@@ -42,8 +42,3 @@ This project is a particle-based computational fluid dynamics (CFD) application,
   ./build/bin/fluids
 ```
 
-## Optimizations
-
-Cached densities
-
-SPH Gradient method
