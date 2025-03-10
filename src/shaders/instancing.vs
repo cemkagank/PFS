@@ -1,21 +1,24 @@
-#version 330 core
+#version 330
 
-layout(location = 0) in vec3 vertexPosition;    // Vertex position
-layout(location = 1) in vec3 vertexColor;       // Vertex color (if any, can be unused)
-layout(location = 2) in mat4 instanceMatrix;    // Instance transformation matrix (passed for each instance)
+// Input vertex attributes
+layout(location = 0) in vec3 vertexPosition;
+layout(location = 1) in vec2 vertexTexCoord;
+layout(location = 2) in vec3 vertexNormal;
+layout(location = 3) in vec4 vertexColor;
 
-uniform mat4 mvp;  // Model-view-projection matrix (used to transform the instance)
+// Output vertex attributes
+out vec4 fragColor;
 
-out vec3 fragColor; // Passing color to the fragment shader
+// Uniform
+uniform mat4 mvp;
+uniform mat4 matModel;
 
-void main() {
-    // Apply instance-specific transformation matrix to the vertex position
-    vec4 transformedPosition = instanceMatrix * vec4(vertexPosition, 1.0);
+void main()
+{
+    // Transform vertex position
+    gl_Position = mvp * vec4(vertexPosition, 1.0);
     
-    // Final position is the result of MVP multiplied by the transformed vertex position
-    gl_Position = mvp * transformedPosition;
-    
-    // Pass the color (can be modified if needed)
-    fragColor = vertexColor;
+    // Pass color to fragment shader
+    fragColor = vec4(1.0, 0.0, 0.0, 1.0); // Force red color for testing
 }
 

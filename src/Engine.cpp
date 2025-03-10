@@ -2,8 +2,6 @@
 #include "time.h"
 #include <cmath>
 #include <cstddef>
-#include <iostream>
-#include <ostream>
 #include <raymath.h>
 #include <omp.h>
 #include <algorithm>
@@ -21,33 +19,53 @@ float Engine::particle_color[4] = {0, 0, 1, 1};           // blue
 
 Engine::Engine() {
     container = box{Vector3{10,10,10},Vector3{-10,-10,-10}};
-    particleMesh = GenMeshSphere(1.0f,  8, 8);
-    mat = LoadMaterialDefault();
-    shader = LoadShader("./shaders/instancing.vs", "./shaders/instancing.fs" );
+    
+    // Create a smaller unit sphere mesh (radius 1.0) with fewer subdivisions
+    particleMesh = GenMeshSphere(1.0f, 8, 8);
+    
+    // Load and configure the instancing shader
+    shader = LoadShader("./src/shaders/instancing.vs", "./src/shaders/instancing.fs");
+    
+    // Debug shader loading
+    if (shader.id == 0) {
+        TraceLog(LOG_ERROR, "Failed to load shader");
+    } else {
+        TraceLog(LOG_INFO, "Shader loaded successfully with ID: %d", shader.id);
+    }
+    
     shader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(shader, "mvp");
-
+    TraceLog(LOG_INFO, "MVP location: %d", shader.locs[SHADER_LOC_MATRIX_MVP]);
+    
+    // Setup material with the instancing shader
+    mat = LoadMaterialDefault();
     mat.shader = shader;
-    mat.maps[MATERIAL_MAP_DIFFUSE].color = BLUE;
+    mat.maps[MATERIAL_MAP_DIFFUSE].color = Color{
+        (unsigned char)(particle_color[0] * 255),
+        (unsigned char)(particle_color[1] * 255),
+        (unsigned char)(particle_color[2] * 255),
+        (unsigned char)(particle_color[3] * 255)
+    };
 }
 
 void Engine::Draw() {
-    //for (size_t i = 0; i < positions.size(); i++) {
-    //   DrawSphere(positions[i], particle_radius, Color{(unsigned char)(particle_color[0] * 255), (unsigned char)(particle_color[1] * 255), (unsigned char)(particle_color[2] * 255), (unsigned char)(particle_color[3] * 255)});
-    //}
-    DrawMeshInstanced( particleMesh,  mat, transforms.data(),  simulation_size);
+    // Draw all particle instances
+    for (size_t i = 0; i < positions.size(); i++) {
+        DrawMesh(particleMesh, mat, transforms[i]);
+    }
     container.Draw();
 }
 
 void Engine::SimulationStep() {
-
     #pragma omp parallel for
     for (size_t i = 0; i < positions.size(); i++) {
-        positions[i] += velocities[i] *  GetFrameTime() * 1;
+        positions[i] += velocities[i] * GetFrameTime() * 1;
     }
 
     #pragma omp parallel for 
     for (int i = 0; i < simulation_size; i++) {
-        transforms[i] = MatrixTranslate(positions[i].x, positions[i].y, positions[i].z);
+        Matrix scale = MatrixScale(particle_radius, particle_radius, particle_radius);
+        Matrix translation = MatrixTranslate(positions[i].x, positions[i].y, positions[i].z);
+        transforms[i] = MatrixMultiply(scale, translation);
     }
 
     #pragma omp parallel for
@@ -61,16 +79,15 @@ void Engine::SimulationStep() {
     }
 
     ResolveCollisions();
-
 }
 
 void Engine::Update() {
-
+    
+    UpdateSpatialLookup();
 
     #pragma omp parallel for
     for (size_t i = 0; i < positions.size(); i++) {
         densities[i] = CalculateDensity(positions[i]);
-    
     }   
 
     #pragma omp parallel for
@@ -78,10 +95,7 @@ void Engine::Update() {
         Vector3 pressureForce = CalculatePressureForce(positions[i]);
         pressures[i] = Vector3Scale(pressureForce, 1.0f / densities[i]);
     }
-
-
 }
-
 
 void Engine::ResolveCollisions() {
     
@@ -106,26 +120,35 @@ void Engine::Reset() {
 
 void Engine::Populate() {
     int count = 0;
-        
+    
+    // Clear existing data
+    Reset();
+    
     for (int i = -10; i < 10; i+=1) {
         for (int j = -5; j < 5; j+=1) {
-            for (int k = -5; k < 5; k+= 1){
+            for (int k = -5; k < 5; k+= 1) {
                 positions.push_back(Vector3{static_cast<float>(i),static_cast<float>(j),static_cast<float>(k)});
-                velocities.push_back(Vector3{ 0,0,0 });
-                transforms.push_back(MatrixTranslate(i, j, j));
+                velocities.push_back(Vector3{0,0,0});
+                Matrix scale = MatrixScale(particle_radius, particle_radius, particle_radius);
+                Matrix translation = MatrixTranslate(i, j, k);
+                transforms.push_back(MatrixMultiply(scale, translation));
                 count++;
             }
         }
-
     }
+    
     simulation_size = count;
     transforms.resize(count);
     densities.resize(count);
     pressures.resize(count);
     forces.resize(count);
     velocities.resize(count);
+    
+    // Add debug output
+    TraceLog(LOG_INFO, "Populated %d particles", count);
+    TraceLog(LOG_INFO, "First particle position: (%f, %f, %f)", 
+             positions[0].x, positions[0].y, positions[0].z);
 }
-
 
 void Engine::UpdateSpatialLookup(){
     
@@ -172,16 +195,12 @@ void Engine::ForEachPointinRadius(Vector3 point) {
                     float squared_distance = Vector3Length(dist);
                     if (squared_distance < squared_radius) {
                         densities[index] += CalculateDensity(point);
-
                     }
                 }
             }
         }
     }
-
 }
-
-
 
 std::pair<int, int> Engine::PositionToCellCoord(Vector3 point) {
     int cellx = (point.x - 800) / smoothing_radius;
@@ -200,11 +219,25 @@ unsigned int Engine::GetKeyFromHash(unsigned int hash) {
 float Engine::CalculateDensity(Vector3 point) {
     float density = 0;
     const float mass = 1000;
+    
+    auto [cellx, celly] = PositionToCellCoord(point);
+    float squared_radius = smoothing_radius * smoothing_radius;
 
-    for (size_t i = 0; i < positions.size(); i++) {
-        float dist = Vector3Distance(positions[i], point);
-        if (dist < smoothing_radius) {
-            density += mass * SmoothingKernel(dist);
+    // Check neighboring cells
+    for (int i = -1; i <= 1; i++) {
+        for (int j = -1; j <= 1; j++) {
+            unsigned int key = GetKeyFromHash(HashCell(cellx + i, celly + j));
+            if (start_indices[key] != -1) {
+                // Iterate through particles in this cell
+                for (size_t k = start_indices[key]; k < spatial_lookup.size(); k++) {
+                    if (spatial_lookup[k].second != key) break;
+                    size_t index = spatial_lookup[k].first;
+                    float dist = Vector3Distance(positions[index], point);
+                    if (dist < smoothing_radius) {
+                        density += mass * SmoothingKernel(dist);
+                    }
+                }
+            }
         }
     }
     return density;
@@ -217,25 +250,38 @@ float Engine::DensityToPressure(float density)
     return pressure;
 }
 
-
 Vector3 Engine::CalculatePressureForce(Vector3 point) {
-    Vector3 gradient = {0,0, 0};
+    Vector3 gradient = {0, 0, 0};
     const float mass = 1000000;
-    float dentPoint = CalculateDensity(point);
-    for (size_t i = 0; i < positions.size(); i++) {
-        Vector3 dist = positions[i] -  point;
-        float distance = Vector3Length(dist);
-        if (distance < smoothing_radius) {
-            float sharedPressure = CalculateSharedPressure(dentPoint, densities[i]);
-            Vector3 scale = Vector3Scale(dist, SmoothingKernelDerivative(distance) / densities[i]);
-            scale = Vector3Scale(scale, mass);
-            scale = Vector3Scale(scale , sharedPressure);
-            gradient = gradient + scale;
+    float densPoint = CalculateDensity(point);
+    
+    auto [cellx, celly] = PositionToCellCoord(point);
+    float squared_radius = smoothing_radius * smoothing_radius;
+
+    // Check neighboring cells
+    for (int i = -1; i <= 1; i++) {
+        for (int j = -1; j <= 1; j++) {
+            unsigned int key = GetKeyFromHash(HashCell(cellx + i, celly + j));
+            if (start_indices[key] != -1) {
+                // Iterate through particles in this cell
+                for (size_t k = start_indices[key]; k < spatial_lookup.size(); k++) {
+                    if (spatial_lookup[k].second != key) break;
+                    size_t index = spatial_lookup[k].first;
+                    Vector3 dist = positions[index] - point;
+                    float distance = Vector3Length(dist);
+                    if (distance < smoothing_radius) {
+                        float sharedPressure = CalculateSharedPressure(densPoint, densities[index]);
+                        Vector3 scale = Vector3Scale(dist, SmoothingKernelDerivative(distance) / densities[index]);
+                        scale = Vector3Scale(scale, mass);
+                        scale = Vector3Scale(scale, sharedPressure);
+                        gradient = gradient + scale;
+                    }
+                }
+            }
         }
     }
     return gradient;
 }
-
 
 float Engine::CalculateSharedPressure(float dens1, float dens2) {
     float pressure1 = DensityToPressure(dens1);
@@ -248,7 +294,6 @@ float Engine::SmoothingKernel(float dist) {
         return 0;
     float volume = PI * std::pow(smoothing_radius , 4) / 6;
     return (smoothing_radius - dist) * (smoothing_radius - dist) / volume;
-
 }
 
 float Engine::SmoothingKernelDerivative(float dist) {
