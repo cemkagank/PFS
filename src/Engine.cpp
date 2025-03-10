@@ -24,21 +24,9 @@ Engine::Engine() {
     particleMesh = GenMeshSphere(1.0f, 8, 8);
     
     // Load and configure the instancing shader
-    shader = LoadShader("./src/shaders/instancing.vs", "./src/shaders/instancing.fs");
-    
-    // Debug shader loading
-    if (shader.id == 0) {
-        TraceLog(LOG_ERROR, "Failed to load shader");
-    } else {
-        TraceLog(LOG_INFO, "Shader loaded successfully with ID: %d", shader.id);
-    }
-    
-    shader.locs[SHADER_LOC_MATRIX_MVP] = GetShaderLocation(shader, "mvp");
-    TraceLog(LOG_INFO, "MVP location: %d", shader.locs[SHADER_LOC_MATRIX_MVP]);
     
     // Setup material with the instancing shader
     mat = LoadMaterialDefault();
-    mat.shader = shader;
     mat.maps[MATERIAL_MAP_DIFFUSE].color = Color{
         (unsigned char)(particle_color[0] * 255),
         (unsigned char)(particle_color[1] * 255),
@@ -48,16 +36,23 @@ Engine::Engine() {
 }
 
 void Engine::Draw() {
-    // Draw all particle instances
-    for (size_t i = 0; i < positions.size(); i++) {
+    for (int i = 0; i < simulation_size; i++) {
         DrawMesh(particleMesh, mat, transforms[i]);
     }
     container.Draw();
+
+    mat.maps[MATERIAL_MAP_DIFFUSE].color = Color{
+        (unsigned char)(particle_color[0] * 255),
+        (unsigned char)(particle_color[1] * 255),
+        (unsigned char)(particle_color[2] * 255),
+        (unsigned char)(particle_color[3] * 255)
+    };
+
 }
 
 void Engine::SimulationStep() {
     #pragma omp parallel for
-    for (size_t i = 0; i < positions.size(); i++) {
+    for ( int i = 0; i < simulation_size; i++) {
         positions[i] += velocities[i] * GetFrameTime() * 1;
     }
 
@@ -69,12 +64,12 @@ void Engine::SimulationStep() {
     }
 
     #pragma omp parallel for
-    for (size_t i = 0; i < positions.size(); i++) {
+    for (int i = 0; i < simulation_size; i++) {
         velocities[i] += {0,gravity * GetFrameTime(), 0};
     }
 
     #pragma omp parallel for
-    for (size_t i = 0; i < positions.size(); i++) {
+    for (int i = 0; i < simulation_size; i++) {
         velocities[i] += pressures[i];
     }
 
@@ -86,12 +81,12 @@ void Engine::Update() {
     UpdateSpatialLookup();
 
     #pragma omp parallel for
-    for (size_t i = 0; i < positions.size(); i++) {
+    for (int i = 0; i < simulation_size; i++) {
         densities[i] = CalculateDensity(positions[i]);
     }   
 
     #pragma omp parallel for
-    for (size_t i = 0; i < positions.size(); i++) {
+    for (int i = 0; i < simulation_size; i++) {
         Vector3 pressureForce = CalculatePressureForce(positions[i]);
         pressures[i] = Vector3Scale(pressureForce, 1.0f / densities[i]);
     }
@@ -100,7 +95,7 @@ void Engine::Update() {
 void Engine::ResolveCollisions() {
     
     #pragma omp parallel for
-    for (size_t i = 0 ; i < positions.size(); i++ ) {
+    for (int i = 0 ; i < simulation_size; i++ ) {
         if (positions[i].x < container.min.x || positions[i].x > container.max.x)
             velocities[i].x *= -1;
         if (positions[i].y < container.min.y || positions[i].y > container.max.y)

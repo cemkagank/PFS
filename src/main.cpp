@@ -24,8 +24,8 @@ int main() {
     Engine engine = Engine();
     engine.Populate();
     bool paused = true;
-    bool diag = false;
-    bool showDensity = false;
+    bool diag = true;
+    bool fare = false;
     auto updatems = std::chrono::milliseconds(0);
     auto simulationms = std::chrono::microseconds(0);
     rlImGuiSetup(true);
@@ -42,7 +42,12 @@ int main() {
 
     while (!WindowShouldClose())
     {
-        UpdateCamera(&cam,CAMERA_FREE);
+        if (IsKeyPressed(KEY_TAB))
+            fare = !fare;
+
+        if (fare) {
+            UpdateCamera(&cam,CAMERA_FREE);
+        }
 
         BeginDrawing();
         ClearBackground(GRAY);
@@ -51,13 +56,6 @@ int main() {
         EndMode3D();
         rlImGuiBegin();
         ImGui::Begin("Settings");
-        ImGui::SameLine(ImGui::Checkbox("Show Density", &showDensity));
-        if (ImGui::IsItemHovered())
-        {
-            ImGui::BeginTooltip();
-            ImGui::Text("Press and hold left mouse button to show density");
-            ImGui::EndTooltip();
-        }
         ImGui::Checkbox("Diagnostics", &diag);
         ImGui::SliderFloat("Smoothing Radius", &engine.smoothing_radius, 1, 100);
         // ImGui::SliderFloat("Threshold", &engine.threshold, 0.1, 1);
@@ -65,7 +63,7 @@ int main() {
         ImGui::SliderFloat("Target Density", &engine.targetDensity, 0.1, 7);
         ImGui::SliderFloat("Pressure Multiplier", &engine.pressureMultiplier, 0.0001f, 0.0010f, "%.4f");
         ImGui::ColorEdit3("Particle Color", engine.particle_color);
-        ImGui::SliderFloat("Particle Radius", &engine.particle_radius, 1, 10);
+        ImGui::SliderFloat("Particle Radius", &engine.particle_radius, 0.1, 4);
         if (ImGui::Button("Pause / Play")) {
             paused = !paused;
         }
