@@ -12,16 +12,15 @@ This project is a particle-based computational fluid dynamics (CFD) application,
 
 ## Roadmap
 
+* [X] Complete 2D alpha
+* [X] Particle lookup optimizations
+* [X] RAII handles
+* [X] Transformd to 3D
+* [ ] Imitate Water Behaviour
+* [ ] First CUDA kernel
 * [ ] Add viscocity
-* [ ] Particle lookup optimizations
-* [ ] RAII handles
 * [ ] Grab , Throw forces
-* [ ] Complete 2D
-* [ ] Transformd to 3D
-* [ ] CUDA Support
 * [ ] Comparison with well known cfd projects
-* [ ] Profiler
-* [ ] Profiler to Data View
 * [ ] Advanced visualiton options
 * [ ] Link and Document optimizations
 
