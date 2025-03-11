@@ -71,8 +71,9 @@ int main() {
         if (ImGui::Button("Reset")) {
             engine.Reset();
         }
-        ImGui::SameLine();
-        if (ImGui::Button("Populate")) {
+       
+        if (ImGui::Button("Spawn 100 Particles")) {
+            engine.SpawnParticlesAtCenter();
         }
         ImGui::End();
 

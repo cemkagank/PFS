@@ -18,14 +18,21 @@ float Engine::particle_radius = 0.2f;                     // Default value
 float Engine::particle_color[4] = {0, 0, 1, 1};           // blue
 
 Engine::Engine() {
-    container = box{Vector3{10,10,10},Vector3{-10,-10,-10}};
+    container = box{Vector3{20,20,20},Vector3{-20,-20,-20}};
+    
+    // Smaller particles for better fluid resolution
+    particle_radius = 0.15f;
+    
+    // More water-like blue color with transparency
+    particle_color[0] = 0.2f;
+    particle_color[1] = 0.5f;
+    particle_color[2] = 0.9f;
+    particle_color[3] = 0.7f;
     
     // Create a smaller unit sphere mesh (radius 1.0) with fewer subdivisions
     particleMesh = GenMeshSphere(1.0f, 8, 8);
     
-    // Load and configure the instancing shader
-    
-    // Setup material with the instancing shader
+    // Load material with adjusted properties
     mat = LoadMaterialDefault();
     mat.maps[MATERIAL_MAP_DIFFUSE].color = Color{
         (unsigned char)(particle_color[0] * 255),
@@ -51,57 +58,164 @@ void Engine::Draw() {
 }
 
 void Engine::SimulationStep() {
+    const float viscosity = 0.1f;
+    const float rest_damping = 0.98f;    // General movement damping
+    const float floor_friction = 0.92f;   // Ground friction
+    const float rest_threshold = 0.1f;    // Rest threshold
+    
+    // First calculate densities and pressures
+    UpdateSpatialLookup();
+
+    // Then update positions and velocities
     #pragma omp parallel for
-    for ( int i = 0; i < simulation_size; i++) {
-        positions[i] += velocities[i] * GetFrameTime() * 1;
+    for (int i = 0; i < simulation_size; i++) {
+        // Apply pressure forces
+        velocities[i] = Vector3Add(velocities[i], pressures[i]);
+        
+        // Update position
+        positions[i] = Vector3Add(positions[i], 
+            Vector3Scale(velocities[i], GetFrameTime()));
+            
+        // Apply general damping
+        velocities[i] = Vector3Scale(velocities[i], rest_damping);
     }
 
+    // Small random movement to prevent stacking
+
+    // Gravity
+    #pragma omp parallel for
+    for (int i = 0; i < simulation_size; i++) {
+        velocities[i].y += gravity * GetFrameTime();
+    }
+
+    // Enhanced collision handling
+    #pragma omp parallel for
+    for (int i = 0; i < simulation_size; i++) {
+        const float bounce = 0.3f;
+        bool is_on_floor = false;
+        
+        // X boundaries
+        if (positions[i].x < container.min.x) {
+            positions[i].x = container.min.x;
+            velocities[i].x = fabsf(velocities[i].x) * bounce;
+        }
+        if (positions[i].x > container.max.x) {
+            positions[i].x = container.max.x;
+            velocities[i].x = -fabsf(velocities[i].x) * bounce;
+        }
+        
+        // Y boundaries with rest detection
+        if (positions[i].y < container.min.y) {
+            positions[i].y = container.min.y;
+            is_on_floor = true;
+            
+            if (fabsf(velocities[i].y) < rest_threshold) {
+                velocities[i].y = 0;
+                velocities[i].x *= floor_friction;
+                velocities[i].z *= floor_friction;
+                
+                if (fabsf(velocities[i].x) < rest_threshold * 0.5f) velocities[i].x = 0;
+                if (fabsf(velocities[i].z) < rest_threshold * 0.5f) velocities[i].z = 0;
+            } else {
+                velocities[i].y = fabsf(velocities[i].y) * bounce;
+                if (fabsf(velocities[i].y) > rest_threshold) {
+                    velocities[i].x += GetRandomValue(-1, 1) * 0.4f;
+                    velocities[i].z += GetRandomValue(-1, 1) * 0.4f;
+                }
+            }
+        }
+        if (positions[i].y > container.max.y) {
+            positions[i].y = container.max.y;
+            velocities[i].y = -fabsf(velocities[i].y) * bounce;
+        }
+        
+        // Z boundaries
+        if (positions[i].z < container.min.z) {
+            positions[i].z = container.min.z;
+            velocities[i].z = fabsf(velocities[i].z) * bounce;
+        }
+        if (positions[i].z > container.max.z) {
+            positions[i].z = container.max.z;
+            velocities[i].z = -fabsf(velocities[i].z) * bounce;
+        }
+    }
+
+    // Update transforms
     #pragma omp parallel for 
     for (int i = 0; i < simulation_size; i++) {
         Matrix scale = MatrixScale(particle_radius, particle_radius, particle_radius);
         Matrix translation = MatrixTranslate(positions[i].x, positions[i].y, positions[i].z);
         transforms[i] = MatrixMultiply(scale, translation);
     }
-
-    #pragma omp parallel for
-    for (int i = 0; i < simulation_size; i++) {
-        velocities[i] += {0,gravity * GetFrameTime(), 0};
-    }
-
-    #pragma omp parallel for
-    for (int i = 0; i < simulation_size; i++) {
-        velocities[i] += pressures[i];
-    }
-
-    ResolveCollisions();
 }
 
 void Engine::Update() {
-    
     UpdateSpatialLookup();
 
     #pragma omp parallel for
     for (int i = 0; i < simulation_size; i++) {
-        densities[i] = CalculateDensity(positions[i]);
+        // Increase density influence
+        densities[i] = CalculateDensity(positions[i]) * 2.0f;
     }   
 
     #pragma omp parallel for
     for (int i = 0; i < simulation_size; i++) {
         Vector3 pressureForce = CalculatePressureForce(positions[i]);
-        pressures[i] = Vector3Scale(pressureForce, 1.0f / densities[i]);
+        // Stronger pressure response
+        pressures[i] = Vector3Scale(pressureForce, 3.0f / densities[i]);
     }
 }
 
 void Engine::ResolveCollisions() {
+    const float dampening = 0.6f;        // Less dampening on collision
+    const float epsilon = 0.1f;          // Boundary buffer
+    const float friction = 0.98f;        // Reduced friction to allow sliding
     
     #pragma omp parallel for
-    for (int i = 0 ; i < simulation_size; i++ ) {
-        if (positions[i].x < container.min.x || positions[i].x > container.max.x)
-            velocities[i].x *= -1;
-        if (positions[i].y < container.min.y || positions[i].y > container.max.y)
-            velocities[i].y *= -1;
-        if (positions[i].z < container.min.z || positions[i].z > container.max.z)
-            velocities[i].z *= -1;
+    for (int i = 0; i < simulation_size; i++) {
+        bool collision = false;
+        
+        // X-axis collisions with less dampening
+        if (positions[i].x < container.min.x + epsilon) {
+            positions[i].x = container.min.x + epsilon;
+            velocities[i].x *= -dampening;
+            collision = true;
+        }
+        if (positions[i].x > container.max.x - epsilon) {
+            positions[i].x = container.max.x - epsilon;
+            velocities[i].x *= -dampening;
+            collision = true;
+        }
+        
+        // Y-axis collisions
+        if (positions[i].y < container.min.y + epsilon) {
+            positions[i].y = container.min.y + epsilon;
+            velocities[i].y *= -dampening;
+            collision = true;
+        }
+        if (positions[i].y > container.max.y - epsilon) {
+            positions[i].y = container.max.y - epsilon;
+            velocities[i].y *= -dampening;
+            collision = true;
+        }
+        
+        // Z-axis collisions with less dampening
+        if (positions[i].z < container.min.z + epsilon) {
+            positions[i].z = container.min.z + epsilon;
+            velocities[i].z *= -dampening;
+            collision = true;
+        }
+        if (positions[i].z > container.max.z - epsilon) {
+            positions[i].z = container.max.z - epsilon;
+            velocities[i].z *= -dampening;
+            collision = true;
+        }
+        
+        // Apply lighter friction when colliding
+        if (collision) {
+            velocities[i].x *= friction;
+            velocities[i].z *= friction;
+        }
     }
 }
 
@@ -213,23 +327,22 @@ unsigned int Engine::GetKeyFromHash(unsigned int hash) {
 
 float Engine::CalculateDensity(Vector3 point) {
     float density = 0;
-    const float mass = 1000;
+    const float mass = 1.5f;  // Adjusted mass for better pressure response
     
     auto [cellx, celly] = PositionToCellCoord(point);
     float squared_radius = smoothing_radius * smoothing_radius;
 
-    // Check neighboring cells
     for (int i = -1; i <= 1; i++) {
         for (int j = -1; j <= 1; j++) {
             unsigned int key = GetKeyFromHash(HashCell(cellx + i, celly + j));
             if (start_indices[key] != -1) {
-                // Iterate through particles in this cell
                 for (size_t k = start_indices[key]; k < spatial_lookup.size(); k++) {
                     if (spatial_lookup[k].second != key) break;
                     size_t index = spatial_lookup[k].first;
                     float dist = Vector3Distance(positions[index], point);
                     if (dist < smoothing_radius) {
-                        density += mass * SmoothingKernel(dist);
+                        float factor = (smoothing_radius - dist) / smoothing_radius;
+                        density += mass * SmoothingKernel(dist) * factor;
                     }
                 }
             }
@@ -238,10 +351,13 @@ float Engine::CalculateDensity(Vector3 point) {
     return density;
 }
 
-float Engine::DensityToPressure(float density)
-{
+float Engine::DensityToPressure(float density) {
     float densityError = density - targetDensity;
     float pressure = densityError * pressureMultiplier;
+    // Add non-linear pressure response
+    if (density > targetDensity) {
+        pressure *= (1.0f + (density - targetDensity) * 0.5f);
+    }
     return pressure;
 }
 
@@ -297,5 +413,43 @@ float Engine::SmoothingKernelDerivative(float dist) {
         return (dist - smoothing_radius) * scale;
     }
     return 0;
+}
+
+void Engine::SpawnParticlesAtCenter() {
+    // Calculate box center
+    Vector3 center = {
+        (container.max.x + container.min.x) / 2.0f,
+        (container.max.y + container.min.y) / 2.0f,
+        (container.max.z + container.min.z) / 2.0f
+    };
+    
+    // Spawn radius - how far from center particles can appear
+    float spawn_radius = 2.0f;
+    
+    // Add 100 particles
+    for (int i = 0; i < 1000; i++) {
+        // Random position within a sphere around center
+        Vector3 pos = {
+            center.x + (GetRandomValue(-100, 100) / 100.0f) * spawn_radius,
+            center.y + (GetRandomValue(-100, 100) / 100.0f) * spawn_radius,
+            center.z + (GetRandomValue(-100, 100) / 100.0f) * spawn_radius
+        };
+        
+        positions.push_back(pos);
+        velocities.push_back(Vector3{0, 0, 0});
+        
+        Matrix scale = MatrixScale(particle_radius, particle_radius, particle_radius);
+        Matrix translation = MatrixTranslate(pos.x, pos.y, pos.z);
+        transforms.push_back(MatrixMultiply(scale, translation));
+    }
+    
+    // Update simulation size and resize other vectors
+    simulation_size += 1000;
+    densities.resize(simulation_size);
+    pressures.resize(simulation_size);
+    forces.resize(simulation_size);
+    
+    // Debug output
+    TraceLog(LOG_INFO, "Spawned 100 particles at center. Total particles: %d", simulation_size);
 }
 

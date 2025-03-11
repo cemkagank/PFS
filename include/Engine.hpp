@@ -42,13 +42,15 @@ private:
 
 public:
     static float particle_radius;
+     float targetDensity = 1.2f;           // Target density for water
+     float pressureMultiplier = 0.000001f * 3;   // Pressure force multiplier
+     float smoothing_radius = 2.0f;        // Particle interaction radius
+    
     static float particle_color[4];
-    float smoothing_radius = 4;
     float threshold = 0.8f;
 
-    float gravity = 0.1;    
-    float targetDensity = 1;
-    float pressureMultiplier = 0.0001;
+    float gravity = -25.0f;    // Increased gravity for more realistic water behavior
+
     Engine();
     void Draw();
     void Update();
@@ -62,28 +64,9 @@ public:
     unsigned int HashCell(int cellx, int celly);
     unsigned int GetKeyFromHash(unsigned int hash);
     unsigned int HashPosition(int x, int y);
+    void SpawnParticlesAtCenter();
     
 
 };
 
 #endif // ENGINE_HPPs`
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
