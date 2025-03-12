@@ -7,11 +7,10 @@
 #include <algorithm>
 #include <raylib.h>
 
-// TODO: Transform to 3D
-// TODO: Add camera
-// FIXME: simulaton_size to update vectors
-// FIXME: Edge teleportation
-// HACK : Parallelize calculations improve performance
+// FIXME: Cell hasing is still 2d make it 3d
+// PERF : Improve general optimization , reach 10K particles
+// TODO : Add rotation
+// TODO: More watery behaviour
 // TODO : replave vector or minimize allocation, copy and move operations --emplace_back and reserve
 
 float Engine::particle_radius = 0.2f;                     // Default value
@@ -58,7 +57,6 @@ void Engine::Draw() {
 }
 
 void Engine::SimulationStep() {
-    const float viscosity = 0.1f;
     const float rest_damping = 0.98f;    // General movement damping
     const float floor_friction = 0.92f;   // Ground friction
     const float rest_threshold = 0.1f;    // Rest threshold
@@ -92,7 +90,6 @@ void Engine::SimulationStep() {
     #pragma omp parallel for
     for (int i = 0; i < simulation_size; i++) {
         const float bounce = 0.3f;
-        bool is_on_floor = false;
         
         // X boundaries
         if (positions[i].x < container.min.x) {
@@ -107,7 +104,6 @@ void Engine::SimulationStep() {
         // Y boundaries with rest detection
         if (positions[i].y < container.min.y) {
             positions[i].y = container.min.y;
-            is_on_floor = true;
             
             if (fabsf(velocities[i].y) < rest_threshold) {
                 velocities[i].y = 0;
@@ -220,11 +216,13 @@ void Engine::ResolveCollisions() {
 }
 
 void Engine::Reset() {
-    forces.clear();
-    densities.clear();
-    pressures.clear();
     positions.clear();
     velocities.clear();
+    densities.clear();
+    forces.clear();
+    pressures.clear();
+    transforms.clear();
+    simulation_size = 0;
 }
 
 void Engine::Populate() {
@@ -312,8 +310,8 @@ void Engine::ForEachPointinRadius(Vector3 point) {
 }
 
 std::pair<int, int> Engine::PositionToCellCoord(Vector3 point) {
-    int cellx = (point.x - 800) / smoothing_radius;
-    int celly = (point.y - 400) / smoothing_radius;
+    int cellx = point.x  / smoothing_radius;
+    int celly = point.y  / smoothing_radius;
     return {cellx, celly};
 }
 
@@ -330,7 +328,6 @@ float Engine::CalculateDensity(Vector3 point) {
     const float mass = 1.5f;  // Adjusted mass for better pressure response
     
     auto [cellx, celly] = PositionToCellCoord(point);
-    float squared_radius = smoothing_radius * smoothing_radius;
 
     for (int i = -1; i <= 1; i++) {
         for (int j = -1; j <= 1; j++) {
@@ -367,8 +364,6 @@ Vector3 Engine::CalculatePressureForce(Vector3 point) {
     float densPoint = CalculateDensity(point);
     
     auto [cellx, celly] = PositionToCellCoord(point);
-    float squared_radius = smoothing_radius * smoothing_radius;
-
     // Check neighboring cells
     for (int i = -1; i <= 1; i++) {
         for (int j = -1; j <= 1; j++) {

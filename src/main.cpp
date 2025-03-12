@@ -33,7 +33,7 @@ int main() {
 
     Camera3D cam;
     cam.target = {0,0,0};
-    cam.position = {20,20,20};
+    cam.position = {20,20,30};
     cam.up = {0,1,0};
     cam.fovy = 45.0f;
     cam.projection = CAMERA_PERSPECTIVE;
@@ -58,10 +58,9 @@ int main() {
         ImGui::Begin("Settings");
         ImGui::Checkbox("Diagnostics", &diag);
         ImGui::SliderFloat("Smoothing Radius", &engine.smoothing_radius, 1, 100);
-        // ImGui::SliderFloat("Threshold", &engine.threshold, 0.1, 1);
         ImGui::SliderFloat("Gravity", &engine.gravity, 0.1, 1);
         ImGui::SliderFloat("Target Density", &engine.targetDensity, 0.1, 7);
-        ImGui::SliderFloat("Pressure Multiplier", &engine.pressureMultiplier, 0.0001f, 0.0010f, "%.4f");
+        ImGui::SliderFloat("Pressure Multiplier", &engine.pressureMultiplier, 0.000001f, 0.000010f, "%.6f");
         ImGui::ColorEdit3("Particle Color", engine.particle_color);
         ImGui::SliderFloat("Particle Radius", &engine.particle_radius, 0.1, 4);
         if (ImGui::Button("Pause / Play")) {
