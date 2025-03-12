@@ -40,6 +40,8 @@ private:
     float CalculateSharedPressure(float dens1, float dens2);   
     Vector3 CalculatePressureForce(Vector3 point);
 
+    Color Interpolate(int index);
+
 public:
     static float particle_radius;
      float targetDensity = 1.2f;           // Target density for water

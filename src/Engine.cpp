@@ -7,10 +7,11 @@
 #include <algorithm>
 #include <raylib.h>
 
-// FIXME: Cell hasing is still 2d make it 3d
+// FIXME: Collusion handling still sucks
+// FIXME: all the spatil lookup stuff including cell and hasing is 2d make it 3d
 // PERF : Improve general optimization , reach 10K particles
 // TODO : Add rotation
-// TODO: More watery behaviour
+// TODO : More watery behaviour
 // TODO : replave vector or minimize allocation, copy and move operations --emplace_back and reserve
 
 float Engine::particle_radius = 0.2f;                     // Default value
@@ -39,21 +40,42 @@ Engine::Engine() {
         (unsigned char)(particle_color[2] * 255),
         (unsigned char)(particle_color[3] * 255)
     };
+    UploadMesh(&particleMesh, false);
 }
 
 void Engine::Draw() {
     for (int i = 0; i < simulation_size; i++) {
+    mat.maps[MATERIAL_MAP_DIFFUSE].color = Interpolate(i);
         DrawMesh(particleMesh, mat, transforms[i]);
     }
     container.Draw();
 
-    mat.maps[MATERIAL_MAP_DIFFUSE].color = Color{
-        (unsigned char)(particle_color[0] * 255),
-        (unsigned char)(particle_color[1] * 255),
-        (unsigned char)(particle_color[2] * 255),
-        (unsigned char)(particle_color[3] * 255)
-    };
+   
+}
 
+Color Engine::Interpolate(int index) {
+    float vel_mag = Vector3Length(velocities[index]);
+    float t = fminf(vel_mag / 15.0f, 1.0f);  // Changed from 3.0f to 15.0f for smoother transition
+    
+    if (t < 0.5f) {
+        // Blue to Yellow (0.0 -> 0.5)
+        float t2 = t * 2.0f;
+        return Color{
+            (unsigned char)(t2 * 255),          // Red
+            (unsigned char)(t2 * 255),          // Green
+            (unsigned char)((1.0f - t2) * 255), // Blue
+            255                                 // Alpha
+        };
+    } else {
+        // Yellow to Red (0.5 -> 1.0)
+        float t2 = (t - 0.5f) * 2.0f;
+        return Color{
+            255,                                // Red
+            (unsigned char)((1.0f - t2) * 255), // Green
+            0,                                  // Blue
+            255                                 // Alpha
+        };
+    }
 }
 
 void Engine::SimulationStep() {
@@ -61,10 +83,8 @@ void Engine::SimulationStep() {
     const float floor_friction = 0.92f;   // Ground friction
     const float rest_threshold = 0.1f;    // Rest threshold
     
-    // First calculate densities and pressures
     UpdateSpatialLookup();
 
-    // Then update positions and velocities
     #pragma omp parallel for
     for (int i = 0; i < simulation_size; i++) {
         // Apply pressure forces
@@ -78,7 +98,6 @@ void Engine::SimulationStep() {
         velocities[i] = Vector3Scale(velocities[i], rest_damping);
     }
 
-    // Small random movement to prevent stacking
 
     // Gravity
     #pragma omp parallel for
@@ -157,7 +176,6 @@ void Engine::Update() {
     #pragma omp parallel for
     for (int i = 0; i < simulation_size; i++) {
         Vector3 pressureForce = CalculatePressureForce(positions[i]);
-        // Stronger pressure response
         pressures[i] = Vector3Scale(pressureForce, 3.0f / densities[i]);
     }
 }

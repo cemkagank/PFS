@@ -25,6 +25,7 @@ set(SOURCES
     src/main.cpp
     src/Window.cpp
     src/Engine.cpp
+    src/UI.cpp
     src/imgui/imgui_draw.cpp
     src/imgui/imgui_widgets.cpp
     src/imgui/imgui_tables.cpp
