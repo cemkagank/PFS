@@ -19,34 +19,19 @@ private:
     box container;
     int simulation_size = 125;
     std::vector<Vector3> positions;
-    std::vector<Vector3> velocities;
-    std::vector<Vector3> forces;
-    std::vector<Vector3> pressures;
-    std::vector<Vector3> gradients;
-    std::vector<float>   densities;
     std::vector<Matrix> transforms;
 
     Mesh particleMesh;
     Material mat;
     Shader shader;
 
-    std::vector<int> start_indices;
-    std::vector<std::pair<int, unsigned int>> spatial_lookup;
-
-    float SmoothingKernel(float distance);
-    float SmoothingKernelDerivative(float distance);
-    float CalculateDensity(Vector3 point);
-    float DensityToPressure(float density);
-    float CalculateSharedPressure(float dens1, float dens2);   
-    Vector3 CalculatePressureForce(Vector3 point);
-
     Color Interpolate(int index);
 
 public:
     static float particle_radius;
-     float targetDensity = 1.2f;           // Target density for water
-     float pressureMultiplier = 0.000001f * 3;   // Pressure force multiplier
-     float smoothing_radius = 2.0f;        // Particle interaction radius
+    float targetDensity = 1.2f;           // Target density for water
+    float pressureMultiplier = 0.000001f * 3;   // Pressure force multiplier
+    float smoothing_radius = 2.0f;        // Particle interaction radius
     
     static float particle_color[4];
     float threshold = 0.8f;
@@ -56,14 +41,13 @@ public:
     Engine();
     void Draw();
     void Update();
-    void SimulationStep();
     void Reset();
     void Populate();
     void ResolveCollisions();
-    void UpdateSpatialLookup();
-    void ForEachPointinRadius(Vector3 point);
-    std::pair<int, int > PositionToCellCoord(Vector3 point);
-    unsigned int HashCell(int cellx, int celly);
+    
+   
+ 
+
     unsigned int GetKeyFromHash(unsigned int hash);
     unsigned int HashPosition(int x, int y);
     void SpawnParticlesAtCenter();

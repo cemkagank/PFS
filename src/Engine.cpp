@@ -19,20 +19,17 @@ float Engine::particle_color[4] = {0, 0, 1, 1};           // blue
 
 Engine::Engine() {
     container = box{Vector3{20,20,20},Vector3{-20,-20,-20}};
-    
-    // Smaller particles for better fluid resolution
+    // TODO : Init Cuda
+    // TODO : init d_positions
     particle_radius = 0.15f;
     
-    // More water-like blue color with transparency
     particle_color[0] = 0.2f;
     particle_color[1] = 0.5f;
     particle_color[2] = 0.9f;
     particle_color[3] = 0.7f;
     
-    // Create a smaller unit sphere mesh (radius 1.0) with fewer subdivisions
     particleMesh = GenMeshSphere(1.0f, 8, 8);
     
-    // Load material with adjusted properties
     mat = LoadMaterialDefault();
     mat.maps[MATERIAL_MAP_DIFFUSE].color = Color{
         (unsigned char)(particle_color[0] * 255),
@@ -78,106 +75,12 @@ Color Engine::Interpolate(int index) {
     }
 }
 
-void Engine::SimulationStep() {
-    const float rest_damping = 0.98f;    // General movement damping
-    const float floor_friction = 0.92f;   // Ground friction
-    const float rest_threshold = 0.1f;    // Rest threshold
-    
-    UpdateSpatialLookup();
-
-    #pragma omp parallel for
-    for (int i = 0; i < simulation_size; i++) {
-        // Apply pressure forces
-        velocities[i] = Vector3Add(velocities[i], pressures[i]);
-        
-        // Update position
-        positions[i] = Vector3Add(positions[i], 
-            Vector3Scale(velocities[i], GetFrameTime()));
-            
-        // Apply general damping
-        velocities[i] = Vector3Scale(velocities[i], rest_damping);
-    }
-
-
-    // Gravity
-    #pragma omp parallel for
-    for (int i = 0; i < simulation_size; i++) {
-        velocities[i].y += gravity * GetFrameTime();
-    }
-
-    // Enhanced collision handling
-    #pragma omp parallel for
-    for (int i = 0; i < simulation_size; i++) {
-        const float bounce = 0.3f;
-        
-        // X boundaries
-        if (positions[i].x < container.min.x) {
-            positions[i].x = container.min.x;
-            velocities[i].x = fabsf(velocities[i].x) * bounce;
-        }
-        if (positions[i].x > container.max.x) {
-            positions[i].x = container.max.x;
-            velocities[i].x = -fabsf(velocities[i].x) * bounce;
-        }
-        
-        // Y boundaries with rest detection
-        if (positions[i].y < container.min.y) {
-            positions[i].y = container.min.y;
-            
-            if (fabsf(velocities[i].y) < rest_threshold) {
-                velocities[i].y = 0;
-                velocities[i].x *= floor_friction;
-                velocities[i].z *= floor_friction;
-                
-                if (fabsf(velocities[i].x) < rest_threshold * 0.5f) velocities[i].x = 0;
-                if (fabsf(velocities[i].z) < rest_threshold * 0.5f) velocities[i].z = 0;
-            } else {
-                velocities[i].y = fabsf(velocities[i].y) * bounce;
-                if (fabsf(velocities[i].y) > rest_threshold) {
-                    velocities[i].x += GetRandomValue(-1, 1) * 0.4f;
-                    velocities[i].z += GetRandomValue(-1, 1) * 0.4f;
-                }
-            }
-        }
-        if (positions[i].y > container.max.y) {
-            positions[i].y = container.max.y;
-            velocities[i].y = -fabsf(velocities[i].y) * bounce;
-        }
-        
-        // Z boundaries
-        if (positions[i].z < container.min.z) {
-            positions[i].z = container.min.z;
-            velocities[i].z = fabsf(velocities[i].z) * bounce;
-        }
-        if (positions[i].z > container.max.z) {
-            positions[i].z = container.max.z;
-            velocities[i].z = -fabsf(velocities[i].z) * bounce;
-        }
-    }
-
-    // Update transforms
-    #pragma omp parallel for 
-    for (int i = 0; i < simulation_size; i++) {
-        Matrix scale = MatrixScale(particle_radius, particle_radius, particle_radius);
-        Matrix translation = MatrixTranslate(positions[i].x, positions[i].y, positions[i].z);
-        transforms[i] = MatrixMultiply(scale, translation);
-    }
-}
 
 void Engine::Update() {
-    UpdateSpatialLookup();
-
-    #pragma omp parallel for
-    for (int i = 0; i < simulation_size; i++) {
-        // Increase density influence
-        densities[i] = CalculateDensity(positions[i]) * 2.0f;
-    }   
-
-    #pragma omp parallel for
-    for (int i = 0; i < simulation_size; i++) {
-        Vector3 pressureForce = CalculatePressureForce(positions[i]);
-        pressures[i] = Vector3Scale(pressureForce, 3.0f / densities[i]);
-    }
+    // TODO : Copy positions to CUDA
+    // TODO : Launch kernels
+    // TODO : Get positions from CUDA
+    // TODO : Update Transformations
 }
 
 void Engine::ResolveCollisions() {
@@ -269,164 +172,18 @@ void Engine::Populate() {
     forces.resize(count);
     velocities.resize(count);
     
-    // Add debug output
-    TraceLog(LOG_INFO, "Populated %d particles", count);
-    TraceLog(LOG_INFO, "First particle position: (%f, %f, %f)", 
-             positions[0].x, positions[0].y, positions[0].z);
 }
 
-void Engine::UpdateSpatialLookup(){
-    
-    spatial_lookup.resize(positions.size());
-    start_indices.resize(positions.size());
 
-    #pragma omp parallel for
-    for (size_t i = 0; i < positions.size(); i++) {
-        std::pair<int, int> cell = PositionToCellCoord(positions[i]);
-        int cellx = cell.first;
-        int celly = cell.second;
-        unsigned int cellkey = GetKeyFromHash(HashCell(cellx, celly));
-        spatial_lookup[i] = {i, cellkey};
-        start_indices[i] = -1;
-    }
-    // sort by cell key
-    std::sort(spatial_lookup.begin(), spatial_lookup.end(), [](const std::pair<int, unsigned int>& a, const std::pair<int, unsigned int>& b) {
-        return a.second < b.second;
-    });
 
-    // Calculate start indices of each unique cell key in the spatial lookup
-    #pragma omp parallel for
-    for (size_t i = 0; i < positions.size(); i++) {
-        unsigned int key = spatial_lookup[i].second;
-        unsigned int keyPrev = i == 0 ? -1 : spatial_lookup[i - 1].second;
-        if (key != keyPrev) {
-            start_indices[key] = i;
-        }
-    }
-}
 
-void Engine::ForEachPointinRadius(Vector3 point) {
-    auto [cellx, celly] = PositionToCellCoord(point);
-    float squared_radius = smoothing_radius * smoothing_radius;
 
-    for (int i = -1; i <= 1; i++) {
-        for (int j = -1; j <= 1; j++) {
-            unsigned int key = GetKeyFromHash(HashCell(cellx + i, celly + j));
-            if (start_indices[key] != -1) {
-                for (size_t k = start_indices[key]; k < spatial_lookup.size(); k++) {
-                    if (spatial_lookup[k].second != key) break;
-                    size_t index = spatial_lookup[k].first;
-                    Vector3 dist = positions[index] - point;
-                    float squared_distance = Vector3Length(dist);
-                    if (squared_distance < squared_radius) {
-                        densities[index] += CalculateDensity(point);
-                    }
-                }
-            }
-        }
-    }
-}
 
-std::pair<int, int> Engine::PositionToCellCoord(Vector3 point) {
-    int cellx = point.x  / smoothing_radius;
-    int celly = point.y  / smoothing_radius;
-    return {cellx, celly};
-}
 
-unsigned int Engine::HashCell(int cellx, int celly) {
-    return cellx * 73856093 + celly * 19349663;
-}
 
-unsigned int Engine::GetKeyFromHash(unsigned int hash) {
-    return hash % simulation_size;
-}
 
-float Engine::CalculateDensity(Vector3 point) {
-    float density = 0;
-    const float mass = 1.5f;  // Adjusted mass for better pressure response
-    
-    auto [cellx, celly] = PositionToCellCoord(point);
 
-    for (int i = -1; i <= 1; i++) {
-        for (int j = -1; j <= 1; j++) {
-            unsigned int key = GetKeyFromHash(HashCell(cellx + i, celly + j));
-            if (start_indices[key] != -1) {
-                for (size_t k = start_indices[key]; k < spatial_lookup.size(); k++) {
-                    if (spatial_lookup[k].second != key) break;
-                    size_t index = spatial_lookup[k].first;
-                    float dist = Vector3Distance(positions[index], point);
-                    if (dist < smoothing_radius) {
-                        float factor = (smoothing_radius - dist) / smoothing_radius;
-                        density += mass * SmoothingKernel(dist) * factor;
-                    }
-                }
-            }
-        }
-    }
-    return density;
-}
 
-float Engine::DensityToPressure(float density) {
-    float densityError = density - targetDensity;
-    float pressure = densityError * pressureMultiplier;
-    // Add non-linear pressure response
-    if (density > targetDensity) {
-        pressure *= (1.0f + (density - targetDensity) * 0.5f);
-    }
-    return pressure;
-}
-
-Vector3 Engine::CalculatePressureForce(Vector3 point) {
-    Vector3 gradient = {0, 0, 0};
-    const float mass = 1000000;
-    float densPoint = CalculateDensity(point);
-    
-    auto [cellx, celly] = PositionToCellCoord(point);
-    // Check neighboring cells
-    for (int i = -1; i <= 1; i++) {
-        for (int j = -1; j <= 1; j++) {
-            unsigned int key = GetKeyFromHash(HashCell(cellx + i, celly + j));
-            if (start_indices[key] != -1) {
-                // Iterate through particles in this cell
-                for (size_t k = start_indices[key]; k < spatial_lookup.size(); k++) {
-                    if (spatial_lookup[k].second != key) break;
-                    size_t index = spatial_lookup[k].first;
-                    Vector3 dist = positions[index] - point;
-                    float distance = Vector3Length(dist);
-                    if (distance < smoothing_radius) {
-                        float sharedPressure = CalculateSharedPressure(densPoint, densities[index]);
-                        Vector3 scale = Vector3Scale(dist, SmoothingKernelDerivative(distance) / densities[index]);
-                        scale = Vector3Scale(scale, mass);
-                        scale = Vector3Scale(scale, sharedPressure);
-                        gradient = gradient + scale;
-                    }
-                }
-            }
-        }
-    }
-    return gradient;
-}
-
-float Engine::CalculateSharedPressure(float dens1, float dens2) {
-    float pressure1 = DensityToPressure(dens1);
-    float pressure2 = DensityToPressure(dens2);
-    return (pressure1 + pressure2) / 2;
-}
-
-float Engine::SmoothingKernel(float dist) {
-    if (dist >= smoothing_radius)
-        return 0;
-    float volume = PI * std::pow(smoothing_radius , 4) / 6;
-    return (smoothing_radius - dist) * (smoothing_radius - dist) / volume;
-}
-
-float Engine::SmoothingKernelDerivative(float dist) {
-    if (dist < smoothing_radius) {
-        float scale = 12  / (PI * std::pow(smoothing_radius, 4)); 
-        return (dist - smoothing_radius) * scale;
-    }
-    return 0;
-}
 
 void Engine::SpawnParticlesAtCenter() {
     // Calculate box center
@@ -449,7 +206,7 @@ void Engine::SpawnParticlesAtCenter() {
         };
         
         positions.push_back(pos);
-        velocities.push_back(Vector3{0, 0, 0});
+        
         
         Matrix scale = MatrixScale(particle_radius, particle_radius, particle_radius);
         Matrix translation = MatrixTranslate(pos.x, pos.y, pos.z);
@@ -458,11 +215,8 @@ void Engine::SpawnParticlesAtCenter() {
     
     // Update simulation size and resize other vectors
     simulation_size += 1000;
-    densities.resize(simulation_size);
-    pressures.resize(simulation_size);
-    forces.resize(simulation_size);
+   
     
-    // Debug output
-    TraceLog(LOG_INFO, "Spawned 100 particles at center. Total particles: %d", simulation_size);
+   
 }
 
