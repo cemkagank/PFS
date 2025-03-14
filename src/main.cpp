@@ -16,6 +16,7 @@ int main() {
     engine.Populate();
     bool paused = true;
     bool fare = false;
+    bool ui_enabled =true;
     auto updatems = std::chrono::milliseconds(0);
     auto simulationms = std::chrono::microseconds(0);
     rlImGuiSetup(true);
@@ -36,17 +37,23 @@ int main() {
     {
         if (IsKeyPressed(KEY_TAB))
             fare = !fare;
-
+        if(IsKeyPressed(KEY_LEFT_SHIFT))
+            ui_enabled = !ui_enabled;
         if (fare) {
             UpdateCamera(&cam,CAMERA_FREE);
         }
+
+
 
         BeginDrawing();
         ClearBackground(GRAY);
         BeginMode3D(cam);
             engine.Draw();
         EndMode3D();
+
+        if (ui_enabled)
             ui.Render();
+        
         EndDrawing();
         if (IsKeyPressed(KEY_P)) {
             paused = !paused;
