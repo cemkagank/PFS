@@ -1,0 +1,1 @@
+__global__ void testkernel(float3* pos, int numpar);

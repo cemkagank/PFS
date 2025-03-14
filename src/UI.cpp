@@ -32,9 +32,7 @@ void UI::Render() {
         engine.Reset();
     }
 
-    if (ImGui::Button("Spawn 1000 Particles")) {
-        engine.SpawnParticlesAtCenter();
-    }
+   
     ImGui::End();
 
 

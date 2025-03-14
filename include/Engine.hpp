@@ -3,6 +3,10 @@
 #include <vector>
 #include <raylib.h>
 
+#include <raymath.h>
+         
+#include <cuda_runtime.h>
+
 typedef struct box {
     Vector3 max;
     Vector3 min;
@@ -16,9 +20,15 @@ typedef struct box {
 class Engine {
 
 private:
+    float3 * d_postions;
+    float3 * d_velocities;
+
+    float3 * h_positions;
+    void init_cuda();
+
+
     box container;
-    int simulation_size = 125;
-    std::vector<Vector3> positions;
+    int simulation_size = 2000;
     std::vector<Matrix> transforms;
 
     Mesh particleMesh;
@@ -27,6 +37,9 @@ private:
 
 
 public:
+    
+
+
     static float particle_radius;
     float targetDensity = 1.2f;           // Target density for water
     float pressureMultiplier = 0.000001f * 3;   // Pressure force multiplier

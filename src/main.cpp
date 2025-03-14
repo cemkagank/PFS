@@ -66,7 +66,7 @@ int main() {
             updatems = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
             start = std::chrono::high_resolution_clock::now();
-            engine.SimulationStep();
+           
             end = std::chrono::high_resolution_clock::now();
             simulationms = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         }
