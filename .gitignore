@@ -4,3 +4,8 @@ obj
 build
 compile_commands.json
 imgui.ini
+gmon.out
+profile_report.txt
+imgui.ini
+shaders
+assets

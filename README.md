@@ -16,13 +16,14 @@ This project is a particle-based computational fluid dynamics (CFD) application,
 * [X] Particle lookup optimizations
 * [X] RAII handles
 * [X] Transformd to 3D
-* [ ] Imitate Water Behaviour
 * [ ] First CUDA kernel
-* [ ] Add viscocity
-* [ ] Grab , Throw forces
-* [ ] Comparison with well known cfd projects
-* [ ] Advanced visualiton options
-* [ ] Link and Document optimizations
+* [ ] Complete CUDA functionality
+* [ ] Shared Memory / kernel profiling
+* [ ] Imitate Water Behaviour
+* [ ] Merge CPU and GPU apps hot reload 
+* [ ] Render / Graphics polishing
+
+
 
 ## Dependencies
 - `raylib` (Must be installed on system DYNAMIC)

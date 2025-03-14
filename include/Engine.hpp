@@ -25,7 +25,6 @@ private:
     Material mat;
     Shader shader;
 
-    Color Interpolate(int index);
 
 public:
     static float particle_radius;
@@ -39,18 +38,11 @@ public:
     float gravity = -25.0f;    // Increased gravity for more realistic water behavior
 
     Engine();
+    ~Engine();
     void Draw();
     void Update();
     void Reset();
     void Populate();
-    void ResolveCollisions();
-    
-   
- 
-
-    unsigned int GetKeyFromHash(unsigned int hash);
-    unsigned int HashPosition(int x, int y);
-    void SpawnParticlesAtCenter();
     
 
 };
