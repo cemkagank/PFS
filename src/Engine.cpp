@@ -81,14 +81,21 @@ Color Engine::Interpolate(int index) {
 void Engine::SimulationStep() {
     const float rest_damping = 0.98f;    // General movement damping
     const float floor_friction = 0.92f;   // Ground friction
-    const float rest_threshold = 0.1f;    // Rest threshold
+    
     
     UpdateSpatialLookup();
 
     #pragma omp parallel for
     for (int i = 0; i < simulation_size; i++) {
         // Apply pressure forces
-        velocities[i] = Vector3Add(velocities[i], pressures[i]);
+        Vector3 pressureForce = CalculatePressureForce(positions[i]);
+        Vector3 viscosityForce = CalculateViscosityForce(positions[i]);
+        
+        // Combine forces with proper scaling
+        velocities[i] = Vector3Add(velocities[i], 
+            Vector3Scale(pressureForce, 1.0f / densities[i]));
+        velocities[i] = Vector3Add(velocities[i], 
+            Vector3Scale(viscosityForce, viscosity));
         
         // Update position
         positions[i] = Vector3Add(positions[i], 
@@ -98,60 +105,90 @@ void Engine::SimulationStep() {
         velocities[i] = Vector3Scale(velocities[i], rest_damping);
     }
 
-
     // Gravity
     #pragma omp parallel for
     for (int i = 0; i < simulation_size; i++) {
         velocities[i].y += gravity * GetFrameTime();
     }
 
-    // Enhanced collision handling
+    // Enhanced collision handling with improved boundary behavior
     #pragma omp parallel for
     for (int i = 0; i < simulation_size; i++) {
         const float bounce = 0.3f;
+        const float boundary_friction = 0.8f;
+        const float min_velocity = 0.1f;
+        const float epsilon = particle_radius * 0.5f;  // Boundary buffer based on particle size
         
-        // X boundaries
-        if (positions[i].x < container.min.x) {
-            positions[i].x = container.min.x;
-            velocities[i].x = fabsf(velocities[i].x) * bounce;
+        // X boundaries with improved collision response
+        if (positions[i].x < container.min.x + epsilon) {
+            positions[i].x = container.min.x + epsilon;
+            if (velocities[i].x < 0) {
+                velocities[i].x = -velocities[i].x * bounce;
+                // Apply friction to other components
+                velocities[i].y *= boundary_friction;
+                velocities[i].z *= boundary_friction;
+            }
         }
-        if (positions[i].x > container.max.x) {
-            positions[i].x = container.max.x;
-            velocities[i].x = -fabsf(velocities[i].x) * bounce;
+        if (positions[i].x > container.max.x - epsilon) {
+            positions[i].x = container.max.x - epsilon;
+            if (velocities[i].x > 0) {
+                velocities[i].x = -velocities[i].x * bounce;
+                velocities[i].y *= boundary_friction;
+                velocities[i].z *= boundary_friction;
+            }
         }
         
-        // Y boundaries with rest detection
-        if (positions[i].y < container.min.y) {
-            positions[i].y = container.min.y;
+        // Y boundaries with improved ground interaction
+        if (positions[i].y < container.min.y + epsilon) {
+            positions[i].y = container.min.y + epsilon;
             
-            if (fabsf(velocities[i].y) < rest_threshold) {
-                velocities[i].y = 0;
-                velocities[i].x *= floor_friction;
-                velocities[i].z *= floor_friction;
-                
-                if (fabsf(velocities[i].x) < rest_threshold * 0.5f) velocities[i].x = 0;
-                if (fabsf(velocities[i].z) < rest_threshold * 0.5f) velocities[i].z = 0;
-            } else {
-                velocities[i].y = fabsf(velocities[i].y) * bounce;
-                if (fabsf(velocities[i].y) > rest_threshold) {
-                    velocities[i].x += GetRandomValue(-1, 1) * 0.4f;
-                    velocities[i].z += GetRandomValue(-1, 1) * 0.4f;
+            // Check if particle is moving downward
+            if (velocities[i].y < 0) {
+                // If velocity is very small, let the particle settle
+                if (fabsf(velocities[i].y) < min_velocity) {
+                    velocities[i].y = 0;
+                    // Stronger friction for settled particles
+                    velocities[i].x *= floor_friction;
+                    velocities[i].z *= floor_friction;
+                } else {
+                    // Bounce with energy loss
+                    velocities[i].y = -velocities[i].y * bounce;
+                    // Apply horizontal friction
+                    velocities[i].x *= boundary_friction;
+                    velocities[i].z *= boundary_friction;
                 }
             }
         }
-        if (positions[i].y > container.max.y) {
-            positions[i].y = container.max.y;
-            velocities[i].y = -fabsf(velocities[i].y) * bounce;
+        if (positions[i].y > container.max.y - epsilon) {
+            positions[i].y = container.max.y - epsilon;
+            if (velocities[i].y > 0) {
+                velocities[i].y = -velocities[i].y * bounce;
+                velocities[i].x *= boundary_friction;
+                velocities[i].z *= boundary_friction;
+            }
         }
         
-        // Z boundaries
-        if (positions[i].z < container.min.z) {
-            positions[i].z = container.min.z;
-            velocities[i].z = fabsf(velocities[i].z) * bounce;
+        // Z boundaries with improved collision response
+        if (positions[i].z < container.min.z + epsilon) {
+            positions[i].z = container.min.z + epsilon;
+            if (velocities[i].z < 0) {
+                velocities[i].z = -velocities[i].z * bounce;
+                velocities[i].x *= boundary_friction;
+                velocities[i].y *= boundary_friction;
+            }
         }
-        if (positions[i].z > container.max.z) {
-            positions[i].z = container.max.z;
-            velocities[i].z = -fabsf(velocities[i].z) * bounce;
+        if (positions[i].z > container.max.z - epsilon) {
+            positions[i].z = container.max.z - epsilon;
+            if (velocities[i].z > 0) {
+                velocities[i].z = -velocities[i].z * bounce;
+                velocities[i].x *= boundary_friction;
+                velocities[i].y *= boundary_friction;
+            }
+        }
+
+        // Apply velocity damping for very small velocities
+        if (Vector3Length(velocities[i]) < min_velocity) {
+            velocities[i] = Vector3Scale(velocities[i], 0.5f);
         }
     }
 
@@ -249,13 +286,20 @@ void Engine::Populate() {
     // Clear existing data
     Reset();
     
-    for (int i = -10; i < 10; i+=1) {
-        for (int j = -5; j < 5; j+=1) {
-            for (int k = -5; k < 5; k+= 1) {
-                positions.push_back(Vector3{static_cast<float>(i),static_cast<float>(j),static_cast<float>(k)});
+    // Create a more compact initial distribution
+    float spacing = particle_radius * 2.0f;  // Reduced spacing between particles
+    
+    for (int i = -8; i < 8; i++) {
+        for (int j = -4; j < 4; j++) {
+            for (int k = -4; k < 4; k++) {
+                positions.push_back(Vector3{
+                    static_cast<float>(i) * spacing,
+                    static_cast<float>(j) * spacing,
+                    static_cast<float>(k) * spacing
+                });
                 velocities.push_back(Vector3{0,0,0});
                 Matrix scale = MatrixScale(particle_radius, particle_radius, particle_radius);
-                Matrix translation = MatrixTranslate(i, j, k);
+                Matrix translation = MatrixTranslate(i * spacing, j * spacing, k * spacing);
                 transforms.push_back(MatrixMultiply(scale, translation));
                 count++;
             }
@@ -269,10 +313,7 @@ void Engine::Populate() {
     forces.resize(count);
     velocities.resize(count);
     
-    // Add debug output
     TraceLog(LOG_INFO, "Populated %d particles", count);
-    TraceLog(LOG_INFO, "First particle position: (%f, %f, %f)", 
-             positions[0].x, positions[0].y, positions[0].z);
 }
 
 void Engine::UpdateSpatialLookup(){
@@ -464,5 +505,33 @@ void Engine::SpawnParticlesAtCenter() {
     
     // Debug output
     TraceLog(LOG_INFO, "Spawned 100 particles at center. Total particles: %d", simulation_size);
+}
+
+Vector3 Engine::CalculateViscosityForce(Vector3 point) {
+    Vector3 viscosityForce = {0, 0, 0};
+    const float mass = 1.0f;
+    
+    auto [cellx, celly] = PositionToCellCoord(point);
+
+    for (int i = -1; i <= 1; i++) {
+        for (int j = -1; j <= 1; j++) {
+            unsigned int key = GetKeyFromHash(HashCell(cellx + i, celly + j));
+            if (start_indices[key] != -1) {
+                for (size_t k = start_indices[key]; k < spatial_lookup.size(); k++) {
+                    if (spatial_lookup[k].second != key) break;
+                    size_t index = spatial_lookup[k].first;
+                    Vector3 dist = positions[index] - point;
+                    float distance = Vector3Length(dist);
+                    if (distance < smoothing_radius && distance > 0.0001f) {
+                        Vector3 velocityDiff = Vector3Subtract(velocities[index], velocities[spatial_lookup[k].first]);
+                        float factor = SmoothingKernel(distance) / densities[index];
+                        viscosityForce = Vector3Add(viscosityForce, 
+                            Vector3Scale(velocityDiff, factor * mass));
+                    }
+                }
+            }
+        }
+    }
+    return viscosityForce;
 }
 

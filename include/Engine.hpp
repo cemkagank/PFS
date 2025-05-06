@@ -39,19 +39,23 @@ private:
     float DensityToPressure(float density);
     float CalculateSharedPressure(float dens1, float dens2);   
     Vector3 CalculatePressureForce(Vector3 point);
+    Vector3 CalculateViscosityForce(Vector3 point);
 
     Color Interpolate(int index);
 
 public:
     static float particle_radius;
-     float targetDensity = 1.2f;           // Target density for water
-     float pressureMultiplier = 0.000001f * 3;   // Pressure force multiplier
-     float smoothing_radius = 2.0f;        // Particle interaction radius
+    float targetDensity = 2.0f;           // Increased target density for more compact fluid
+    float pressureMultiplier = 0.000001f * 5;   // Increased pressure force multiplier
+    float smoothing_radius = 1.5f;        // Reduced smoothing radius for tighter particle interaction
+    float viscosity = 0.1f;               // Added viscosity coefficient
+    float rest_damping = 0.98f;           // General movement damping
+    float floor_friction = 0.92f;         // Ground friction
     
     static float particle_color[4];
     float threshold = 0.8f;
 
-    float gravity = -25.0f;    // Increased gravity for more realistic water behavior
+    float gravity = -25.0f;    // Gravity for water behavior
 
     Engine();
     void Draw();
@@ -67,8 +71,6 @@ public:
     unsigned int GetKeyFromHash(unsigned int hash);
     unsigned int HashPosition(int x, int y);
     void SpawnParticlesAtCenter();
-    
-
 };
 
-#endif // ENGINE_HPPs`
+#endif // ENGINE_HPP
