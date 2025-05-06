@@ -4,6 +4,7 @@
 #include <vector_types.h>
 #include <vector_functions.h>
 #include <raylib.h>
+#include <rlgl.h>
 #include <stdio.h>
 
 // CUDA error checking macro
@@ -39,11 +40,11 @@ Engine::Engine() {
     // Smaller particles for better fluid resolution
     particle_radius = 0.15f;
     
-    // More water-like blue color with transparency
-    particle_color[0] = 0.2f;
+    // change color beacuse skybox is alread blue
+    particle_color[0] = 0.5f;
     particle_color[1] = 0.5f;
-    particle_color[2] = 0.9f;
-    particle_color[3] = 0.7f;
+    particle_color[2] = 0.5f;
+    particle_color[3] = 1.0f;
     
     // Create a smaller unit sphere mesh (radius 1.0) with fewer subdivisions
     particleMesh = GenMeshSphere(1.0f, 8, 8);
@@ -57,6 +58,17 @@ Engine::Engine() {
         (unsigned char)(particle_color[3] * 255)
     };
     UploadMesh(&particleMesh, false);
+    
+    // Initialize skybox and floor
+    skyboxLoaded = false;
+    floorLoaded = false;
+    cameraPosition = Vector3Zero();
+    LoadSkybox();
+    LoadFloor();
+    
+    // Basic OpenGL setup
+    rlEnableDepthTest();
+    rlEnableBackfaceCulling();
 }
 
 Engine::~Engine() {
@@ -67,18 +79,22 @@ Engine::~Engine() {
     if (d_pressures) CUDA_CHECK(cudaFree(d_pressures));
     if (d_spatialLookup) CUDA_CHECK(cudaFree(d_spatialLookup));
     if (d_startIndices) CUDA_CHECK(cudaFree(d_startIndices));
+    
+    // Unload skybox and floor
+    UnloadSkybox();
+    UnloadFloor();
 }
 
 void Engine::Draw() {
+    // Draw skybox first
+    DrawSkybox();
+    
+    // Draw floor
+    DrawFloor();
+    
     // Copy positions from device to host for rendering
     CUDA_CHECK(cudaMemcpy(positions.data(), d_positions, 
         simulation_size * sizeof(float3), cudaMemcpyDeviceToHost));
-
-    // Debug print positions before rendering
-    printf("\nPositions before rendering:\n");
-    for (int i = 0; i < std::min(5, simulation_size); i++) {
-        printf("Position %d: (%f, %f, %f)\n", i, positions[i].x, positions[i].y, positions[i].z);
-    }
 
     for (int i = 0; i < simulation_size; i++) {
         DrawMesh(particleMesh, mat, transforms[i]);
@@ -327,4 +343,113 @@ void Engine::SpawnParticlesAtCenter() {
     CUDA_CHECK(cudaMemset(d_startIndices, 0, simulation_size * sizeof(int)));
 
     TraceLog(LOG_INFO, "Spawned %d particles at center", simulation_size);
+}
+
+void Engine::LoadSkybox() {
+    // Create a skybox texture with horizon effect
+    const int size = 512;
+    Image img = GenImageColor(size, size, BLANK);
+    
+    // Create a gradient from dark blue at top to light blue at bottom
+    for (int y = 0; y < size; y++) {
+        float t = (float)y / size;  // 0 at top, 1 at bottom
+        
+        // Create a horizon effect
+        Color color;
+        if (t < 0.5f) {
+            // Sky gradient (top half)
+            color = {
+                (unsigned char)(20 + t * 40),     // R: 20-40
+                (unsigned char)(40 + t * 80),     // G: 40-80
+                (unsigned char)(100 + t * 155),   // B: 100-180
+                255
+            };
+        } else {
+            // Horizon gradient (bottom half)
+            float horizonT = (t - 0.5f) * 2.0f;  // 0 to 1 in bottom half
+            color = {
+                (unsigned char)(40 + horizonT * 20),    // R: 40-60
+                (unsigned char)(80 + horizonT * 40),    // G: 80-120
+                (unsigned char)(180 + horizonT * 75),   // B: 180-255
+                255
+            };
+        }
+        
+        // Draw horizontal line
+        for (int x = 0; x < size; x++) {
+            ImageDrawPixel(&img, x, y, color);
+        }
+    }
+    
+    // Convert to cubemap
+    skyboxTexture = LoadTextureCubemap(img, CUBEMAP_LAYOUT_AUTO_DETECT);
+    UnloadImage(img);
+    skyboxLoaded = true;
+    TraceLog(LOG_INFO, "Skybox texture created successfully");
+}
+
+void Engine::DrawSkybox() {
+    if (skyboxLoaded) {
+        // Clear the background with sky blue color
+        ClearBackground(SKYBLUE);
+    }
+}
+
+void Engine::UnloadSkybox() {
+    if (skyboxLoaded) {
+        UnloadTexture(skyboxTexture);
+        skyboxLoaded = false;
+    }
+}
+
+void Engine::DrawFloor() {
+    if (floorLoaded) {
+        // Draw the floor using stored mesh and material
+        float floorY = container.min.y;  // Place it at the bottom of the container
+        DrawMesh(floorMesh, floorMat, MatrixTranslate(0, floorY, 0));
+    }
+}
+
+void Engine::LoadFloor() {
+    // Create a checkerboard texture
+    const int size = 512;
+    const int tileSize = 32;  // Smaller tiles for more detail
+    Image img = GenImageColor(size, size, WHITE);
+    
+    // Create checkerboard pattern with high contrast
+    for (int y = 0; y < size; y++) {
+        for (int x = 0; x < size; x++) {
+            bool isEvenTile = ((x / tileSize) + (y / tileSize)) % 2 == 0;
+            Color color = isEvenTile ? WHITE : Color{40, 40, 40, 255};  // Dark gray instead of black
+            ImageDrawPixel(&img, x, y, color);
+        }
+    }
+    
+    // Load the texture
+    floorTexture = LoadTextureFromImage(img);
+    SetTextureFilter(floorTexture, TEXTURE_FILTER_BILINEAR);  // Enable texture filtering
+    SetTextureWrap(floorTexture, TEXTURE_WRAP_REPEAT);  // Enable texture repeating
+    UnloadImage(img);
+    
+    // Create floor mesh - make it much larger than the container
+    float floorSize = 50.0f;  // Increased from 20.0f to 50.0f
+    floorMesh = GenMeshPlane(floorSize, floorSize, 1, 1);
+    UploadMesh(&floorMesh, false);
+    
+    // Create floor material
+    floorMat = LoadMaterialDefault();
+    floorMat.maps[MATERIAL_MAP_DIFFUSE].texture = floorTexture;
+    floorMat.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;  // Full brightness
+    
+    floorLoaded = true;
+    TraceLog(LOG_INFO, "Floor texture created successfully");
+}
+
+void Engine::UnloadFloor() {
+    if (floorLoaded) {
+        UnloadTexture(floorTexture);
+        UnloadMesh(floorMesh);
+        UnloadMaterial(floorMat);
+        floorLoaded = false;
+    }
 } 

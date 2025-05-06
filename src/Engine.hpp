@@ -24,6 +24,12 @@ public:
     void Populate();
     void SpawnParticlesAtCenter();
     
+    // Skybox methods
+    void LoadSkybox();
+    void DrawSkybox();
+    void UnloadSkybox();
+    void SetCameraPosition(Vector3 pos) { cameraPosition = pos; }
+    
 private:
     Color Interpolate(int index);
     
@@ -52,6 +58,20 @@ private:
     // Rendering data
     Mesh particleMesh;
     Material mat;
+    
+    // Skybox
+    Texture2D skyboxTexture;
+    bool skyboxLoaded;
+    Vector3 cameraPosition;
+    
+    // Floor
+    Texture2D floorTexture;
+    Mesh floorMesh;
+    Material floorMat;
+    bool floorLoaded;
+    void LoadFloor();
+    void DrawFloor();
+    void UnloadFloor();
 };
 
 #endif // ENGINE_HPP 
