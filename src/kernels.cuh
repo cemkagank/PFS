@@ -1,70 +1,24 @@
-#ifndef KERNELS_CUH
-#define KERNELS_CUH
-
+#pragma once
 #include <cuda_runtime.h>
 #include <vector_types.h>
+#include <vector_functions.h>
 
-// Constants
-#define TARGET_DENSITY 1.0f
-#define STIFFNESS 0.00001f
-#define SMOOTHING_RADIUS 2.0f
-#define VISCOSITY 0.1f
-#define DAMPING 0.99f
-#define REST_DENSITY 1.0f
-#define GAS_CONSTANT 20.0f
+// Device constants
+extern __device__ __constant__ float smoothing_radius;
+extern __device__ __constant__ float gravity;
 
 // Helper functions
-__device__ float smoothingKernel(float dist, float smoothingRadius);
-__device__ float smoothingKernelDerivative(float dist, float smoothingRadius);
-__device__ float densityToPressure(float density);
-__device__ float length(float3 v);
-__device__ float3 normalize(float3 v);
-__device__ int getCellHash(int3 cell);
+__device__ float distance(float3 a, float3 b);
+__device__ float3 scale_vector(float3 a, float b);
+__device__ float smoothing_kernel(float dist);
+__device__ float smoothing_kernel_derivative(float dist);
+__device__ float shared_pressure(float dens1, float dens2);
 
 // Main kernels
-__global__ void updateSpatialLookupKernel(
-    float3* positions,
-    int* spatialLookup,
-    int* startIndices,
-    int numParticles,
-    float smoothingRadius
-);
+__global__ void density_kernel(float3* positions, float* densities, int* spatial_lookup, int* start_indices, int num_particles);
+__global__ void pressure_kernel(float3* positions, float3* velocities, float* densities, float3* forces, float dt);
+__global__ void update_positions_kernel(float3* positions, float3* velocities, float3* forces, float dt);
 
-__global__ void sortParticlesKernel(
-    int* spatialLookup,
-    int* startIndices,
-    int numParticles
-);
-
-__global__ void calculateDensityKernel(
-    float3* positions,
-    float* densities,
-    int* spatialLookup,
-    int* startIndices,
-    int numParticles,
-    float smoothingRadius
-);
-
-__global__ void calculatePressureForceKernel(
-    float3* positions,
-    float3* velocities,
-    float* densities,
-    float3* pressures,
-    int* spatialLookup,
-    int* startIndices,
-    int numParticles,
-    float smoothingRadius
-);
-
-__global__ void updatePositionsKernel(
-    float3* positions,
-    float3* velocities,
-    float3* pressures,
-    float3 containerMin,
-    float3 containerMax,
-    float gravity,
-    float deltaTime,
-    int numParticles
-);
-
-#endif // KERNELS_CUH 
+// Spatial lookup kernels
+__global__ void build_spatial_lookup_kernel(float3* positions, int* spatial_lookup, int* start_indices, int num_particles);
+__global__ void update_spatial_lookup_kernel(float3* positions, int* spatial_lookup, int* start_indices, int num_particles); 

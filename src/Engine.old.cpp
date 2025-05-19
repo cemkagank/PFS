@@ -366,16 +366,6 @@ float Engine::CalculateDensity(Vector3 point) {
     return density;
 }
 
-float Engine::DensityToPressure(float density) {
-    float densityError = density - targetDensity;
-    float pressure = densityError * pressureMultiplier;
-    // Add non-linear pressure response
-    if (density > targetDensity) {
-        pressure *= (1.0f + (density - targetDensity) * 0.5f);
-    }
-    return pressure;
-}
-
 Vector3 Engine::CalculatePressureForce(Vector3 point) {
     Vector3 gradient = {0, 0, 0};
     const float mass = 1000000;
@@ -408,8 +398,8 @@ Vector3 Engine::CalculatePressureForce(Vector3 point) {
 }
 
 float Engine::CalculateSharedPressure(float dens1, float dens2) {
-    float pressure1 = DensityToPressure(dens1);
-    float pressure2 = DensityToPressure(dens2);
+    float pressure1 = densityToPressure(dens1);
+    float pressure2 = densityToPressure(dens2);
     return (pressure1 + pressure2) / 2;
 }
 

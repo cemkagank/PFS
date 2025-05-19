@@ -36,7 +36,6 @@ private:
     float SmoothingKernel(float distance);
     float SmoothingKernelDerivative(float distance);
     float CalculateDensity(Vector3 point);
-    float DensityToPressure(float density);
     float CalculateSharedPressure(float dens1, float dens2);   
     Vector3 CalculatePressureForce(Vector3 point);
 

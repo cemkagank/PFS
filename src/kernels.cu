@@ -1,422 +1,330 @@
 #include "kernels.cuh"
-#include <math.h>
+#include <curand_kernel.h>
 
-// Helper functions
-__device__ float smoothingKernel(float dist, float smoothingRadius) {
-    if (dist >= smoothingRadius) return 0.0f;
-    float q = dist / smoothingRadius;
-    float volume = (M_PI * smoothingRadius * smoothingRadius * smoothingRadius) / 6.0f;
+__device__ __constant__ float smoothing_radius = 0.3f;
+__device__ __constant__ float gravity = 9.81f;
+__device__ __constant__ float REST_DENSITY = 1000.0f;
+__device__ __constant__ float GAS_CONSTANT = 500.0f;
+__device__ __constant__ float VISCOSITY = 50.0f;
+__device__ __constant__ float PARTICLE_MASS = 0.05f;
+__device__ __constant__ float MAX_VELOCITY = 5.0f;
+
+// Spatial lookup constants
+__device__ __constant__ int grid_size_x = 32;
+__device__ __constant__ int grid_size_y = 32;
+__device__ __constant__ int grid_size_z = 32;
+__device__ __constant__ float grid_min_x = -10.0f;
+__device__ __constant__ float grid_min_y = -10.0f;
+__device__ __constant__ float grid_min_z = -10.0f;
+__device__ __constant__ float grid_max_x = 10.0f;
+__device__ __constant__ float grid_max_y = 10.0f;
+__device__ __constant__ float grid_max_z = 10.0f;
+
+// Helper function to get cell coordinates from position
+__device__ int3 get_cell_coords(float3 pos) {
+    float3 cell_size = make_float3(
+        (grid_max_x - grid_min_x) / grid_size_x,
+        (grid_max_y - grid_min_y) / grid_size_y,
+        (grid_max_z - grid_min_z) / grid_size_z
+    );
+    
+    int3 cell = make_int3(
+        (int)((pos.x - grid_min_x) / cell_size.x),
+        (int)((pos.y - grid_min_y) / cell_size.y),
+        (int)((pos.z - grid_min_z) / cell_size.z)
+    );
+    
+    // Clamp to grid bounds
+    cell.x = max(0, min(cell.x, grid_size_x - 1));
+    cell.y = max(0, min(cell.y, grid_size_y - 1));
+    cell.z = max(0, min(cell.z, grid_size_z - 1));
+    
+    return cell;
+}
+
+// Hash function for 3D grid cell
+__device__ int hash_cell(int3 cell) {
+    return cell.x + cell.y * grid_size_x + cell.z * grid_size_x * grid_size_y;
+}
+
+// Build spatial lookup table
+__global__ void build_spatial_lookup_kernel(float3* positions, int* spatial_lookup, int* start_indices, int num_particles) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_particles) return;
+    
+    // Get cell coordinates for this particle
+    int3 cell = get_cell_coords(positions[idx]);
+    int hash = hash_cell(cell);
+    
+    // Store particle index and its cell hash
+    spatial_lookup[idx] = hash;
+    
+    // Initialize start indices
+    start_indices[idx] = -1;
+}
+
+// Update spatial lookup table
+__global__ void update_spatial_lookup_kernel(float3* positions, int* spatial_lookup, int* start_indices, int num_particles) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_particles) return;
+    
+    // Get cell coordinates for this particle
+    int3 cell = get_cell_coords(positions[idx]);
+    int hash = hash_cell(cell);
+    
+    // Update spatial lookup
+    spatial_lookup[idx] = hash;
+    
+    // Update start indices
+    if (idx == 0 || spatial_lookup[idx] != spatial_lookup[idx - 1]) {
+        start_indices[hash] = idx;
+    }
+}
+
+__device__ float distance(float3 a, float3 b) {
+    float3 dist = make_float3(a.x - b.x, a.y - b.y, a.z - b.z);
+    float dist_mag = sqrt(dist.x * dist.x + dist.y * dist.y + dist.z * dist.z);
+    return dist_mag;
+}
+
+__device__ float3 scale_vector(float3 a, float b) {
+    return make_float3(a.x * b, a.y * b, a.z * b);
+}
+
+__device__ float smoothing_kernel(float dist) {
+    if (dist >= smoothing_radius)
+        return 0;
+    float volume = M_PI * smoothing_radius * smoothing_radius * smoothing_radius / 6.0f;
+    float q = dist / smoothing_radius;
     return (1.0f - q) * (1.0f - q) * (1.0f - q) / volume;
 }
 
-__device__ float smoothingKernelDerivative(float dist, float smoothingRadius) {
-    if (dist >= smoothingRadius) return 0.0f;
-    float q = dist / smoothingRadius;
-    float scale = 3.0f / (M_PI * smoothingRadius * smoothingRadius * smoothingRadius);
-    return -scale * (1.0f - q) * (1.0f - q);
+__device__ float smoothing_kernel_derivative(float dist) {
+    if (dist >= smoothing_radius)
+        return 0;
+    float q = dist / smoothing_radius;
+    float scale = -3.0f / (M_PI * smoothing_radius * smoothing_radius * smoothing_radius);
+    return scale * (1.0f - q) * (1.0f - q);
 }
 
-__device__ float densityToPressure(float density) {
-    float densityError = density - REST_DENSITY;
-    return GAS_CONSTANT * densityError * densityError;  // Quadratic pressure response
+__device__ float density_to_pressure(float density) {
+    float gamma = 7.0f;
+    return GAS_CONSTANT * (powf(density / REST_DENSITY, gamma) - 1.0f);
 }
 
-// Vector operations
-__device__ float length(float3 v) {
-    return sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
-}
-
-__device__ float3 normalize(float3 v) {
-    float len = length(v);
-    if (len > 0.0f) {
-        return make_float3(v.x / len, v.y / len, v.z / len);
-    }
-    return make_float3(0.0f, 0.0f, 0.0f);
-}
-
-// Spatial lookup helper
-__device__ int getCellHash(int3 cell) {
-    // Use a larger prime number to reduce hash collisions
-    const int p1 = 73856093;
-    const int p2 = 19349663;
-    const int p3 = 83492791;
-    const int p4 = 1234567891;
-    return (cell.x * p1 ^ cell.y * p2 ^ cell.z * p3) % p4;
-}
-
-// Main kernels
-__global__ void updateSpatialLookupKernel(
-    float3* positions,
-    int* spatialLookup,
-    int* startIndices,
-    int numParticles,
-    float smoothingRadius
-) {
+__global__ void density_kernel(float3* positions, float* densities, int* spatial_lookup, int* start_indices, int num_particles) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= numParticles) return;
-
-    // Calculate cell coordinates
-    int3 cell = make_int3(
-        (int)(positions[idx].x / smoothingRadius),
-        (int)(positions[idx].y / smoothingRadius),
-        (int)(positions[idx].z / smoothingRadius)
-    );
-
-    // Store particle index and cell hash
-    spatialLookup[idx] = getCellHash(cell);
-    startIndices[idx] = idx;
-}
-
-__global__ void sortParticlesKernel(
-    int* spatialLookup,
-    int* startIndices,
-    int numParticles
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= numParticles) return;
-
-    // Simple bubble sort within the block
-    for (int i = 0; i < blockDim.x - 1; i++) {
-        int j = idx + i;
-        if (j >= numParticles - 1) break;
-        
-        if (spatialLookup[j] > spatialLookup[j + 1]) {
-            // Swap hashes
-            int tempHash = spatialLookup[j];
-            spatialLookup[j] = spatialLookup[j + 1];
-            spatialLookup[j + 1] = tempHash;
-            
-            // Swap indices
-            int tempIdx = startIndices[j];
-            startIndices[j] = startIndices[j + 1];
-            startIndices[j + 1] = tempIdx;
-        }
-    }
-}
-
-__global__ void calculateDensityKernel(
-    float3* positions,
-    float* densities,
-    int* spatialLookup,
-    int* startIndices,
-    int numParticles,
-    float smoothingRadius
-) {
-    extern __shared__ float3 sharedPositions[];
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= numParticles) return;
-
-    float3 pos = positions[idx];
-    float density = 0.0f;
-
-    // Calculate cell coordinates
-    int3 cell = make_int3(
-        (int)(pos.x / smoothingRadius),
-        (int)(pos.y / smoothingRadius),
-        (int)(pos.z / smoothingRadius)
-    );
-
-    // Pre-calculate cell hash for current particle
-    int currentCellHash = getCellHash(cell);
-
-    // Pre-allocate arrays for neighboring cells
-    int neighborHashes[27];  // 3x3x3 grid
-    int neighborCount = 0;
-
-    // Pre-calculate all neighbor cell hashes
-    for (int x = -1; x <= 1; x++) {
-        for (int y = -1; y <= 1; y++) {
-            for (int z = -1; z <= 1; z++) {
-                int3 neighborCell = make_int3(cell.x + x, cell.y + y, cell.z + z);
-                neighborHashes[neighborCount++] = getCellHash(neighborCell);
-            }
-        }
-    }
-
-    // Process all neighbor cells
-    for (int n = 0; n < 27; n++) {
-        int cellHash = neighborHashes[n];
-        
-        // Find the range of particles in this cell
-        int left = 0;
-        int right = numParticles - 1;
-        int start = -1;
-        int end = -1;
-
-        // Binary search for the start of this cell's particles
-        while (left <= right) {
-            int mid = (left + right) / 2;
-            if (spatialLookup[mid] == cellHash) {
-                start = mid;
-                right = mid - 1;
-            } else if (spatialLookup[mid] < cellHash) {
-                left = mid + 1;
-            } else {
-                right = mid - 1;
-            }
-        }
-
-        // If we found the start, find the end
-        if (start != -1) {
-            left = start;
-            right = numParticles - 1;
-            while (left <= right) {
-                int mid = (left + right) / 2;
-                if (spatialLookup[mid] == cellHash) {
-                    end = mid;
-                    left = mid + 1;
-                } else {
-                    right = mid - 1;
-                }
-            }
-
-            // Load particles into shared memory in chunks
-            int numParticlesInCell = end - start + 1;
-            int numChunks = (numParticlesInCell + blockDim.x - 1) / blockDim.x;
-            
-            for (int chunk = 0; chunk < numChunks; chunk++) {
-                int chunkStart = start + chunk * blockDim.x;
-                int chunkEnd = min(chunkStart + blockDim.x, end + 1);
-                
-                // Load particles into shared memory
-                for (int i = chunkStart + threadIdx.x; i < chunkEnd; i += blockDim.x) {
-                    int particleIdx = startIndices[i];
-                    sharedPositions[threadIdx.x] = positions[particleIdx];
-                }
-                __syncthreads();
-
-                // Process particles in shared memory
-                for (int i = 0; i < min(blockDim.x, chunkEnd - chunkStart); i++) {
-                    float3 diff = make_float3(
-                        pos.x - sharedPositions[i].x,
-                        pos.y - sharedPositions[i].y,
-                        pos.z - sharedPositions[i].z
-                    );
-                    float dist = length(diff);
-                    if (dist < smoothingRadius) {
-                        density += smoothingKernel(dist, smoothingRadius);
-                    }
-                }
-                __syncthreads();
-            }
-        }
-    }
-
-    densities[idx] = density * REST_DENSITY;
-}
-
-__global__ void calculatePressureForceKernel(
-    float3* positions,
-    float3* velocities,
-    float* densities,
-    float3* pressures,
-    int* spatialLookup,
-    int* startIndices,
-    int numParticles,
-    float smoothingRadius
-) {
-    extern __shared__ float3 sharedData[];
-    float3* sharedPositions = sharedData;
-    float3* sharedVelocities = &sharedData[blockDim.x];
-    float* sharedDensities = (float*)&sharedData[2 * blockDim.x];
-
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= numParticles) return;
-
-    float3 pos = positions[idx];
-    float3 force = make_float3(0.0f, 0.0f, 0.0f);
-    float density = densities[idx];
-    float pressure = densityToPressure(density);
-
-    // Calculate cell coordinates
-    int3 cell = make_int3(
-        (int)(pos.x / smoothingRadius),
-        (int)(pos.y / smoothingRadius),
-        (int)(pos.z / smoothingRadius)
-    );
-
-    // Pre-calculate cell hash for current particle
-    int currentCellHash = getCellHash(cell);
-
-    // Pre-allocate arrays for neighboring cells
-    int neighborHashes[27];  // 3x3x3 grid
-    int neighborCount = 0;
-
-    // Pre-calculate all neighbor cell hashes
-    for (int x = -1; x <= 1; x++) {
-        for (int y = -1; y <= 1; y++) {
-            for (int z = -1; z <= 1; z++) {
-                int3 neighborCell = make_int3(cell.x + x, cell.y + y, cell.z + z);
-                neighborHashes[neighborCount++] = getCellHash(neighborCell);
-            }
-        }
-    }
-
-    // Process all neighbor cells
-    for (int n = 0; n < 27; n++) {
-        int cellHash = neighborHashes[n];
-        
-        // Find the range of particles in this cell
-        int left = 0;
-        int right = numParticles - 1;
-        int start = -1;
-        int end = -1;
-
-        // Binary search for the start of this cell's particles
-        while (left <= right) {
-            int mid = (left + right) / 2;
-            if (spatialLookup[mid] == cellHash) {
-                start = mid;
-                right = mid - 1;
-            } else if (spatialLookup[mid] < cellHash) {
-                left = mid + 1;
-            } else {
-                right = mid - 1;
-            }
-        }
-
-        // If we found the start, find the end
-        if (start != -1) {
-            left = start;
-            right = numParticles - 1;
-            while (left <= right) {
-                int mid = (left + right) / 2;
-                if (spatialLookup[mid] == cellHash) {
-                    end = mid;
-                    left = mid + 1;
-                } else {
-                    right = mid - 1;
-                }
-            }
-
-            // Load particles into shared memory in chunks
-            int numParticlesInCell = end - start + 1;
-            int numChunks = (numParticlesInCell + blockDim.x - 1) / blockDim.x;
-            
-            for (int chunk = 0; chunk < numChunks; chunk++) {
-                int chunkStart = start + chunk * blockDim.x;
-                int chunkEnd = min(chunkStart + blockDim.x, end + 1);
-                
-                // Load particles into shared memory
-                for (int i = chunkStart + threadIdx.x; i < chunkEnd; i += blockDim.x) {
-                    int particleIdx = startIndices[i];
-                    sharedPositions[threadIdx.x] = positions[particleIdx];
-                    sharedVelocities[threadIdx.x] = velocities[particleIdx];
-                    sharedDensities[threadIdx.x] = densities[particleIdx];
-                }
-                __syncthreads();
-
-                // Process particles in shared memory
-                for (int i = 0; i < min(blockDim.x, chunkEnd - chunkStart); i++) {
-                    int particleIdx = startIndices[chunkStart + i];
-                    if (particleIdx != idx) {
-                        float3 diff = make_float3(
-                            pos.x - sharedPositions[i].x,
-                            pos.y - sharedPositions[i].y,
-                            pos.z - sharedPositions[i].z
-                        );
-                        float dist = length(diff);
-                        if (dist < smoothingRadius && dist > 0.0f) {
-                            float3 dir = normalize(diff);
-                            float neighborPressure = densityToPressure(sharedDensities[i]);
-                            float pressureForce = (pressure + neighborPressure) * 
-                                smoothingKernelDerivative(dist, smoothingRadius);
-                            
-                            // Add viscosity
-                            float3 velDiff = make_float3(
-                                velocities[idx].x - sharedVelocities[i].x,
-                                velocities[idx].y - sharedVelocities[i].y,
-                                velocities[idx].z - sharedVelocities[i].z
-                            );
-                            float viscosityForce = VISCOSITY * smoothingKernel(dist, smoothingRadius);
-                            
-                            force.x += dir.x * pressureForce + velDiff.x * viscosityForce;
-                            force.y += dir.y * pressureForce + velDiff.y * viscosityForce;
-                            force.z += dir.z * pressureForce + velDiff.z * viscosityForce;
-                        }
-                    }
-                }
-                __syncthreads();
-            }
-        }
-    }
-
-    // Scale the force by the inverse of density
-    if (density > 0.0f) {
-        force.x /= density;
-        force.y /= density;
-        force.z /= density;
-    }
-
-    pressures[idx] = force;
-}
-
-__global__ void updatePositionsKernel(
-    float3* positions,
-    float3* velocities,
-    float3* pressures,
-    float3 containerMin,
-    float3 containerMax,
-    float gravity,
-    float deltaTime,
-    int numParticles
-) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= numParticles) return;
-
-    // Update velocity
-    velocities[idx].x += pressures[idx].x * deltaTime;
-    velocities[idx].y += (pressures[idx].y + gravity) * deltaTime;
-    velocities[idx].z += pressures[idx].z * deltaTime;
-
-    // Apply damping
-    velocities[idx].x *= DAMPING;
-    velocities[idx].y *= DAMPING;
-    velocities[idx].z *= DAMPING;
-
-    // Update position
-    positions[idx].x += velocities[idx].x * deltaTime;
-    positions[idx].y += velocities[idx].y * deltaTime;
-    positions[idx].z += velocities[idx].z * deltaTime;
-
-    // Boundary collision with proper bounce and friction
-    const float bounce = 0.2f;
-    const float friction = 0.1f;
+    if (idx >= num_particles) return;
     
-    if (positions[idx].x < containerMin.x) {
-        positions[idx].x = containerMin.x;
-        velocities[idx].x = fabsf(velocities[idx].x) * bounce;
-        velocities[idx].y *= (1.0f - friction);
-        velocities[idx].z *= (1.0f - friction);
+    float density = 0.0f;
+    float3 pos = positions[idx];
+    int3 cell = get_cell_coords(pos);
+    
+    // Check neighboring cells
+    for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+            for (int z = -1; z <= 1; z++) {
+                int3 neighbor_cell = make_int3(
+                    cell.x + x,
+                    cell.y + y,
+                    cell.z + z
+                );
+                
+                // Skip if neighbor cell is out of bounds
+                if (neighbor_cell.x < 0 || neighbor_cell.x >= grid_size_x ||
+                    neighbor_cell.y < 0 || neighbor_cell.y >= grid_size_y ||
+                    neighbor_cell.z < 0 || neighbor_cell.z >= grid_size_z) {
+                    continue;
+                }
+                
+                int neighbor_hash = hash_cell(neighbor_cell);
+                int start_idx = start_indices[neighbor_hash];
+                
+                // Process particles in this cell
+                while (start_idx != -1 && spatial_lookup[start_idx] == neighbor_hash) {
+                    float dist = distance(pos, positions[start_idx]);
+                    if (dist < smoothing_radius) {
+                        density += PARTICLE_MASS * smoothing_kernel(dist);
+                    }
+                    start_idx++;
+                }
+            }
+        }
     }
-    if (positions[idx].x > containerMax.x) {
-        positions[idx].x = containerMax.x;
-        velocities[idx].x = -fabsf(velocities[idx].x) * bounce;
-        velocities[idx].y *= (1.0f - friction);
-        velocities[idx].z *= (1.0f - friction);
+    
+    densities[idx] = density;
+}
+
+__global__ void pressure_kernel(float3 * positions, float3 * velocities, float * densities, float3 * forces, float dt) {
+    float3 force = make_float3(0.0f, 0.0f, 0.0f);
+    
+    __shared__ float3 poss[256];
+    __shared__ float3 vels[256];
+    __shared__ float dens[256];
+
+    int i = threadIdx.x;
+    int blockSize = blockDim.x;
+    
+    poss[i] = positions[blockIdx.x * blockSize + i];
+    vels[i] = velocities[blockIdx.x * blockSize + i];
+    dens[i] = densities[blockIdx.x * blockSize + i];
+
+    __syncthreads();
+
+    float pressure_i = density_to_pressure(dens[i]);
+
+    // Add gravity first
+    force.y -= gravity * PARTICLE_MASS;
+
+    for(int j = 0; j < blockSize; j++) {
+        if(i != j) {
+            float dist_mag = distance(poss[i], poss[j]);
+            if(dist_mag < smoothing_radius && dist_mag > 0.0f) {
+                float3 diff = make_float3(
+                    poss[i].x - poss[j].x,
+                    poss[i].y - poss[j].y,
+                    poss[i].z - poss[j].z
+                );
+                
+                // Normalize the difference vector
+                float inv_dist = 1.0f / dist_mag;
+                diff.x *= inv_dist;
+                diff.y *= inv_dist;
+                diff.z *= inv_dist;
+                
+                // Pressure force
+                float pressure_j = density_to_pressure(dens[j]);
+                float3 pressure_grad = scale_vector(diff, smoothing_kernel_derivative(dist_mag));
+                float pressure_force = (pressure_i + pressure_j) / (2.0f * dens[i]);
+                force.x += pressure_force * pressure_grad.x;
+                force.y += pressure_force * pressure_grad.y;
+                force.z += pressure_force * pressure_grad.z;
+
+                // Viscosity force
+                float3 vel_diff = make_float3(
+                    vels[i].x - vels[j].x,
+                    vels[i].y - vels[j].y,
+                    vels[i].z - vels[j].z
+                );
+                float viscosity_factor = VISCOSITY * PARTICLE_MASS / (dens[i] * dens[j]);
+                force.x += viscosity_factor * vel_diff.x;
+                force.y += viscosity_factor * vel_diff.y;
+                force.z += viscosity_factor * vel_diff.z;
+            }
+        }
     }
-    if (positions[idx].y < containerMin.y) {
-        positions[idx].y = containerMin.y;
-        velocities[idx].y = fabsf(velocities[idx].y) * bounce;
-        velocities[idx].x *= (1.0f - friction);
-        velocities[idx].z *= (1.0f - friction);
+
+    forces[blockIdx.x * blockSize + i] = force;
+}
+
+__global__ void update_positions_kernel(float3 * positions, float3 * velocities, float3 * forces, float dt) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    // Update velocity with smaller timestep for stability
+    velocities[i].x += forces[i].x * dt * 0.05f;
+    velocities[i].y += forces[i].y * dt * 0.05f;
+    velocities[i].z += forces[i].z * dt * 0.05f;
+    
+    // Clamp velocities to prevent light speed
+    float speed = sqrtf(velocities[i].x * velocities[i].x + 
+                       velocities[i].y * velocities[i].y + 
+                       velocities[i].z * velocities[i].z);
+    if (speed > MAX_VELOCITY) {
+        float scale = MAX_VELOCITY / speed;
+        velocities[i].x *= scale;
+        velocities[i].y *= scale;
+        velocities[i].z *= scale;
     }
-    if (positions[idx].y > containerMax.y) {
-        positions[idx].y = containerMax.y;
-        velocities[idx].y = -fabsf(velocities[idx].y) * bounce;
-        velocities[idx].x *= (1.0f - friction);
-        velocities[idx].z *= (1.0f - friction);
+    
+    // Apply damping
+    const float damping = 0.99f;
+    velocities[i].x *= damping;
+    velocities[i].y *= damping;
+    velocities[i].z *= damping;
+    
+    // Update position
+    positions[i].x += velocities[i].x * dt;
+    positions[i].y += velocities[i].y * dt;
+    positions[i].z += velocities[i].z * dt;
+    
+    // Boundary conditions with water-like bounce
+    const float boundary = 10.0f;  // Match container size
+    const float bounce = 0.1f;     // Very small bounce
+    const float friction = 0.2f;   // More friction
+    const float min_velocity = 0.01f;  // Very small minimum velocity
+    
+    // X boundaries
+    if(positions[i].x < -boundary) {
+        positions[i].x = -boundary;
+        if(fabsf(velocities[i].x) > min_velocity) {
+            velocities[i].x = fabsf(velocities[i].x) * bounce;
+        } else {
+            velocities[i].x = 0.0f;
+        }
+        velocities[i].y *= (1.0f - friction);
+        velocities[i].z *= (1.0f - friction);
     }
-    if (positions[idx].z < containerMin.z) {
-        positions[idx].z = containerMin.z;
-        velocities[idx].z = fabsf(velocities[idx].z) * bounce;
-        velocities[idx].x *= (1.0f - friction);
-        velocities[idx].y *= (1.0f - friction);
+    if(positions[i].x > boundary) {
+        positions[i].x = boundary;
+        if(fabsf(velocities[i].x) > min_velocity) {
+            velocities[i].x = -fabsf(velocities[i].x) * bounce;
+        } else {
+            velocities[i].x = 0.0f;
+        }
+        velocities[i].y *= (1.0f - friction);
+        velocities[i].z *= (1.0f - friction);
     }
-    if (positions[idx].z > containerMax.z) {
-        positions[idx].z = containerMax.z;
-        velocities[idx].z = -fabsf(velocities[idx].z) * bounce;
-        velocities[idx].x *= (1.0f - friction);
-        velocities[idx].y *= (1.0f - friction);
+    
+    // Y boundaries
+    if(positions[i].y < -boundary) {
+        positions[i].y = -boundary;
+        if(fabsf(velocities[i].y) > min_velocity) {
+            velocities[i].y = fabsf(velocities[i].y) * bounce;
+        } else {
+            velocities[i].y = 0.0f;
+        }
+        velocities[i].x *= (1.0f - friction);
+        velocities[i].z *= (1.0f - friction);
     }
-} 
+    if(positions[i].y > boundary) {
+        positions[i].y = boundary;
+        if(fabsf(velocities[i].y) > min_velocity) {
+            velocities[i].y = -fabsf(velocities[i].y) * bounce;
+        } else {
+            velocities[i].y = 0.0f;
+        }
+        velocities[i].x *= (1.0f - friction);
+        velocities[i].z *= (1.0f - friction);
+    }
+    
+    // Z boundaries
+    if(positions[i].z < -boundary) {
+        positions[i].z = -boundary;
+        if(fabsf(velocities[i].z) > min_velocity) {
+            velocities[i].z = fabsf(velocities[i].z) * bounce;
+        } else {
+            velocities[i].z = 0.0f;
+        }
+        velocities[i].x *= (1.0f - friction);
+        velocities[i].y *= (1.0f - friction);
+    }
+    if(positions[i].z > boundary) {
+        positions[i].z = boundary;
+        if(fabsf(velocities[i].z) > min_velocity) {
+            velocities[i].z = -fabsf(velocities[i].z) * bounce;
+        } else {
+            velocities[i].z = 0.0f;
+        }
+        velocities[i].x *= (1.0f - friction);
+        velocities[i].y *= (1.0f - friction);
+    }
+}
+
+
+
+
+
+
+    
+
+

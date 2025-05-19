@@ -13,7 +13,7 @@ class Engine {
 public:
     static float particle_radius;
     static float particle_color[4];
-    
+
     Engine();
     ~Engine();
     
@@ -38,7 +38,7 @@ private:
     std::vector<Vector3> velocities;
     std::vector<float> densities;
     std::vector<Vector3> forces;
-    std::vector<Vector3> pressures;
+    std::vector<float> pressures;
     std::vector<Matrix> transforms;
     int simulation_size;
     
@@ -47,7 +47,7 @@ private:
     float3* d_velocities;
     float* d_densities;
     float3* d_forces;
-    float3* d_pressures;
+    float* d_pressures;
     int* d_spatialLookup;
     int* d_startIndices;
     

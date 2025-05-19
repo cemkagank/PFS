@@ -40,11 +40,11 @@ Engine::Engine() {
     // Smaller particles for better fluid resolution
     particle_radius = 0.15f;
     
-    // change color beacuse skybox is alread blue
-    particle_color[0] = 0.5f;
-    particle_color[1] = 0.5f;
-    particle_color[2] = 0.5f;
-    particle_color[3] = 1.0f;
+    // Nice water blue color
+    particle_color[0] = 0.2f;  // R
+    particle_color[1] = 0.5f;  // G
+    particle_color[2] = 0.9f;  // B
+    particle_color[3] = 0.8f;  // A
     
     // Create a smaller unit sphere mesh (radius 1.0) with fewer subdivisions
     particleMesh = GenMeshSphere(1.0f, 8, 8);
@@ -103,49 +103,26 @@ void Engine::Draw() {
 }
 
 void Engine::SimulationStep() {
-    const int blockSize = 128;
+    const int blockSize = 256;
     const int numBlocks = (simulation_size + blockSize - 1) / blockSize;
     
-    // Calculate shared memory size for density kernel (positions only)
-    size_t densitySharedMemSize = blockSize * sizeof(float3);
-    
-    // Calculate shared memory size for pressure kernel (positions, velocities, and densities)
-    size_t pressureSharedMemSize = blockSize * (2 * sizeof(float3) + sizeof(float));
-
     // Update spatial lookup
-    updateSpatialLookupKernel<<<numBlocks, blockSize>>>(d_positions, d_spatialLookup, d_startIndices, simulation_size, SMOOTHING_RADIUS);
-    cudaDeviceSynchronize();
-    
-    // Sort particles
-    sortParticlesKernel<<<numBlocks, blockSize>>>(d_spatialLookup, d_startIndices, simulation_size);
-    cudaDeviceSynchronize();
-    
-    // Calculate density with shared memory
-    calculateDensityKernel<<<numBlocks, blockSize, densitySharedMemSize>>>(
-        d_positions, d_densities, d_spatialLookup, d_startIndices, simulation_size, SMOOTHING_RADIUS
-    );
-    cudaDeviceSynchronize();
-    
-    // Calculate pressure forces with shared memory
-    int pressureBlocks = (simulation_size + blockSize - 1) / blockSize;
-    calculatePressureForceKernel<<<pressureBlocks, blockSize, pressureSharedMemSize>>>(
-        d_positions, d_velocities, d_densities, d_pressures, d_spatialLookup, d_startIndices, simulation_size, SMOOTHING_RADIUS
-    );
-    cudaDeviceSynchronize();
-    
-    // Update positions
-    float3 containerMin = make_float3(container.min.x, container.min.y, container.min.z);
-    float3 containerMax = make_float3(container.max.x, container.max.y, container.max.z);
-    
-    updatePositionsKernel<<<numBlocks, blockSize>>>(
-        d_positions, d_velocities, d_pressures, containerMin, containerMax, gravity, GetFrameTime(), simulation_size
-    );
-    cudaDeviceSynchronize();
-    
-    // Copy positions for rendering
-    CUDA_CHECK(cudaMemcpy(positions.data(), d_positions, simulation_size * sizeof(float3), cudaMemcpyDeviceToHost));
-    
-    // Update transforms for rendering
+    build_spatial_lookup_kernel<<<numBlocks, blockSize>>>(d_positions, d_spatialLookup, d_startIndices, simulation_size);
+    update_spatial_lookup_kernel<<<numBlocks, blockSize>>>(d_positions, d_spatialLookup, d_startIndices, simulation_size);
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    // Launch kernels with spatial lookup
+    density_kernel<<<numBlocks, blockSize>>>(d_positions, d_densities, d_spatialLookup, d_startIndices, simulation_size);
+    pressure_kernel<<<numBlocks, blockSize>>>(d_positions, d_velocities, d_densities, d_forces, GetFrameTime());
+    update_positions_kernel<<<numBlocks, blockSize>>>(d_positions, d_velocities, d_forces, GetFrameTime());
+
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    // retrieve positions from device
+    CUDA_CHECK(cudaMemcpy(positions.data(), d_positions, 
+        simulation_size * sizeof(float3), cudaMemcpyDeviceToHost));
+
+    // update transforms
     for (int i = 0; i < simulation_size; i++) {
         Matrix scale = MatrixScale(particle_radius, particle_radius, particle_radius);
         Matrix translation = MatrixTranslate(positions[i].x, positions[i].y, positions[i].z);
@@ -174,8 +151,8 @@ void Engine::Reset() {
 
 void Engine::Populate() {
     // Create particles in a grid pattern
-    const float spacing = 0.3f;  // Reduced spacing to fit more particles
-    const int gridSize = 22;     // 22^3 = 10648 particles (slightly more than 10K)
+    const float spacing = 0.2f;  // Reduced spacing to fit more particles
+    const int gridSize = 28;     // 28^3 = 21952 particles (slightly more than 20K)
     simulation_size = gridSize * gridSize * gridSize;
     
     // Resize host vectors
@@ -206,7 +183,12 @@ void Engine::Populate() {
                 };
                 
                 // Store velocity as Vector3
-                velocities[particleIndex] = Vector3{0, 0, 0};
+                velocities[particleIndex] = Vector3{0.0f, 0.0f, 0.0f};
+                
+                // Initialize other properties
+                densities[particleIndex] = 0.0f;
+                pressures[particleIndex] = 0.0f;
+                forces[particleIndex] = Vector3{0.0f, 0.0f, 0.0f};
                 
                 // Create transform matrix
                 Matrix scale = MatrixScale(particle_radius, particle_radius, particle_radius);
@@ -235,7 +217,7 @@ void Engine::Populate() {
     CUDA_CHECK(cudaMalloc(&d_positions, simulation_size * sizeof(float3)));
     CUDA_CHECK(cudaMalloc(&d_velocities, simulation_size * sizeof(float3)));
     CUDA_CHECK(cudaMalloc(&d_densities, simulation_size * sizeof(float)));
-    CUDA_CHECK(cudaMalloc(&d_pressures, simulation_size * sizeof(float3)));
+    CUDA_CHECK(cudaMalloc(&d_pressures, simulation_size * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&d_forces, simulation_size * sizeof(float3)));
     CUDA_CHECK(cudaMalloc(&d_spatialLookup, simulation_size * sizeof(int)));
     CUDA_CHECK(cudaMalloc(&d_startIndices, simulation_size * sizeof(int)));
@@ -243,23 +225,20 @@ void Engine::Populate() {
     // Convert Vector3 to float3 for device memory
     std::vector<float3> positions_float3(simulation_size);
     std::vector<float3> velocities_float3(simulation_size);
+    std::vector<float3> forces_float3(simulation_size);
+    
     for (int i = 0; i < simulation_size; i++) {
         positions_float3[i] = make_float3(positions[i].x, positions[i].y, positions[i].z);
         velocities_float3[i] = make_float3(velocities[i].x, velocities[i].y, velocities[i].z);
+        forces_float3[i] = make_float3(forces[i].x, forces[i].y, forces[i].z);
     }
 
     // Copy initial data to device
-    CUDA_CHECK(cudaMemcpy(d_positions, positions_float3.data(), 
-        simulation_size * sizeof(float3), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_velocities, velocities_float3.data(), 
-        simulation_size * sizeof(float3), cudaMemcpyHostToDevice));
-
-    // Initialize device memory
-    CUDA_CHECK(cudaMemset(d_densities, 0, simulation_size * sizeof(float)));
-    CUDA_CHECK(cudaMemset(d_pressures, 0, simulation_size * sizeof(float3)));
-    CUDA_CHECK(cudaMemset(d_forces, 0, simulation_size * sizeof(float3)));
-    CUDA_CHECK(cudaMemset(d_spatialLookup, 0, simulation_size * sizeof(int)));
-    CUDA_CHECK(cudaMemset(d_startIndices, 0, simulation_size * sizeof(int)));
+    CUDA_CHECK(cudaMemcpy(d_positions, positions_float3.data(), simulation_size * sizeof(float3), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_velocities, velocities_float3.data(), simulation_size * sizeof(float3), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_densities, densities.data(), simulation_size * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_pressures, pressures.data(), simulation_size * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_forces, forces_float3.data(), simulation_size * sizeof(float3), cudaMemcpyHostToDevice));
 
     // Print debug info
     printf("Created %d particles\n", simulation_size);
@@ -287,7 +266,7 @@ void Engine::SpawnParticlesAtCenter() {
                     static_cast<float>(k) * spacing
                 };
                 positions.push_back(pos);
-                velocities.push_back(Vector3{0,0,0});
+                velocities.push_back(Vector3{0.0f, 0.0f, 0.0f});
                 Matrix scale = MatrixScale(particle_radius, particle_radius, particle_radius);
                 Matrix translation = MatrixTranslate(pos.x, pos.y, pos.z);
                 transforms.push_back(MatrixMultiply(scale, translation));
@@ -316,29 +295,28 @@ void Engine::SpawnParticlesAtCenter() {
     CUDA_CHECK(cudaMalloc(&d_positions, simulation_size * sizeof(float3)));
     CUDA_CHECK(cudaMalloc(&d_velocities, simulation_size * sizeof(float3)));
     CUDA_CHECK(cudaMalloc(&d_densities, simulation_size * sizeof(float)));
-    CUDA_CHECK(cudaMalloc(&d_pressures, simulation_size * sizeof(float3)));
+    CUDA_CHECK(cudaMalloc(&d_pressures, simulation_size * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&d_forces, simulation_size * sizeof(float3)));
     CUDA_CHECK(cudaMalloc(&d_spatialLookup, simulation_size * sizeof(int)));
     CUDA_CHECK(cudaMalloc(&d_startIndices, simulation_size * sizeof(int)));
 
-    // Convert Vector3 to float3 and copy to device
+    // Convert Vector3 to float3 for device memory
     std::vector<float3> positions_float3(simulation_size);
     std::vector<float3> velocities_float3(simulation_size);
+    std::vector<float3> forces_float3(simulation_size);
+    
     for (int i = 0; i < simulation_size; i++) {
         positions_float3[i] = make_float3(positions[i].x, positions[i].y, positions[i].z);
         velocities_float3[i] = make_float3(velocities[i].x, velocities[i].y, velocities[i].z);
+        forces_float3[i] = make_float3(0.0f, 0.0f, 0.0f);
     }
 
     // Copy initial data to device
-    CUDA_CHECK(cudaMemcpy(d_positions, positions_float3.data(), 
-        simulation_size * sizeof(float3), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_velocities, velocities_float3.data(), 
-        simulation_size * sizeof(float3), cudaMemcpyHostToDevice));
-
-    // Initialize device memory
+    CUDA_CHECK(cudaMemcpy(d_positions, positions_float3.data(), simulation_size * sizeof(float3), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_velocities, velocities_float3.data(), simulation_size * sizeof(float3), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemset(d_densities, 0, simulation_size * sizeof(float)));
-    CUDA_CHECK(cudaMemset(d_pressures, 0, simulation_size * sizeof(float3)));
-    CUDA_CHECK(cudaMemset(d_forces, 0, simulation_size * sizeof(float3)));
+    CUDA_CHECK(cudaMemset(d_pressures, 0, simulation_size * sizeof(float)));
+    CUDA_CHECK(cudaMemcpy(d_forces, forces_float3.data(), simulation_size * sizeof(float3), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemset(d_spatialLookup, 0, simulation_size * sizeof(int)));
     CUDA_CHECK(cudaMemset(d_startIndices, 0, simulation_size * sizeof(int)));
 
