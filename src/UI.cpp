@@ -20,21 +20,91 @@ void UI::Render() {
     rlImGuiBegin();
     ImGui::Begin("Settings");
     ImGui::Checkbox("Diagnostics", &diag);
-    ImGui::SliderFloat("Smoothing Radius", &engine.smoothing_radius, 1, 100);
-    ImGui::SliderFloat("Gravity", &engine.gravity, 0.1, 1);
-    ImGui::SliderFloat("Target Density", &engine.targetDensity, 0.1, 7);
-    ImGui::SliderFloat("Pressure Multiplier", &engine.pressureMultiplier, 0.000001f, 0.000010f, "%.6f");
-    ImGui::ColorEdit3("Particle Color", engine.particle_color);
-    ImGui::SliderFloat("Particle Radius", &engine.particle_radius, 0.1, 4);
-   
+    
     ImGui::SameLine();
     if (ImGui::Button("Reset")) {
         engine.Reset();
     }
 
-    if (ImGui::Button("Spawn 1000 Particles")) {
-        engine.SpawnParticlesAtCenter();
+    // Draw a line here to separate the buttons
+    ImGui::Separator();
+    if (ImGui::Button("Populate : 10^3")) {
+        engine.Reset();
+        engine.Populate(10);
     }
+    ImGui::SameLine();
+    if (ImGui::Button("Populate : 15^3")) {
+        engine.Reset();
+        engine.Populate(15);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Populate : 20^3")) {
+        engine.Reset();
+        engine.Populate(20);
+    }
+
+
+    if (ImGui::Button("Populate : 24^3")) {
+        engine.Reset();
+        engine.Populate(24);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Populate : 28^3")) {
+        engine.Reset();
+        engine.Populate(28);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Populate : 32^3")) {
+        engine.Reset();
+        engine.Populate(32);
+    }
+    if (ImGui::Button("Populate : 34^3")) {
+        engine.Reset();
+        engine.Populate(34);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Populate : 36^3")) {
+        engine.Reset();
+        engine.Populate(36);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Populate : 38^3")) {
+        engine.Reset();
+        engine.Populate(38);
+    }
+    if (ImGui::Button("Populate : 42^3")) {
+        engine.Reset();
+        engine.Populate(42);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Populate : 44^3")) {
+        engine.Reset();
+        engine.Populate(44);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Populate : 48^3")) {
+        engine.Reset();
+        engine.Populate(48);
+    }
+    if (ImGui::Button("Populate : 52^3")) {
+        engine.Reset();
+        engine.Populate(52);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Populate : 56^3")) {
+        engine.Reset();
+        engine.Populate(56);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Populate : 64^3")) {
+        engine.Reset();
+        engine.Populate(64);
+    }
+    
+
+
+
+    
     ImGui::End();
 
 
@@ -48,16 +118,13 @@ void UI::Render() {
         ImGui::Text("Metric"); ImGui::NextColumn();
         ImGui::Text("Value"); ImGui::NextColumn();
         ImGui::Separator();
-        ImGui::Text("Update Time"); ImGui::NextColumn();
-        ImGui::Text("%lims", updatems.count()); ImGui::NextColumn();
         ImGui::Text("Simulation Time"); ImGui::NextColumn();
         ImGui::Text("%lius", simms.count()); ImGui::NextColumn();
         ImGui::Text("Frame Time"); ImGui::NextColumn();
         ImGui::Text("%.fms", GetFrameTime() * 1000); ImGui::NextColumn();
         ImGui::Text("FPS"); ImGui::NextColumn();
         ImGui::Text("%i", GetFPS()); ImGui::NextColumn();
-        ImGui::Text("Memory Usage"); ImGui::NextColumn();
-        ImGui::Text("%likb",get_mem()); ImGui::NextColumn();
+    
         ImGui::End();
     }
     rlImGuiEnd();

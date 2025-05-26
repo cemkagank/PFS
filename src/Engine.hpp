@@ -21,8 +21,9 @@ public:
     void SimulationStep();
     void Update() { SimulationStep(); } // Alias for backward compatibility
     void Reset();
-    void Populate();
+    void Populate(int n);
     void SpawnParticlesAtCenter();
+    int GetSimulationSize();
     
     // Skybox methods
     void LoadSkybox();

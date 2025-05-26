@@ -85,6 +85,10 @@ Engine::~Engine() {
     UnloadFloor();
 }
 
+int Engine::GetSimulationSize() {
+    return simulation_size;
+}
+
 void Engine::Draw() {
     // Draw skybox first
     DrawSkybox();
@@ -103,6 +107,9 @@ void Engine::Draw() {
 }
 
 void Engine::SimulationStep() {
+
+    if (simulation_size == 0 || d_positions == nullptr) return; // Prevent invalid kernel launches
+
     const int blockSize = 256;
     const int numBlocks = (simulation_size + blockSize - 1) / blockSize;
     
@@ -111,10 +118,11 @@ void Engine::SimulationStep() {
     update_spatial_lookup_kernel<<<numBlocks, blockSize>>>(d_positions, d_spatialLookup, d_startIndices, simulation_size);
     CUDA_CHECK(cudaDeviceSynchronize());
 
-    // Launch kernels with spatial lookup
+    // Launch kernels 
     density_kernel<<<numBlocks, blockSize>>>(d_positions, d_densities, d_spatialLookup, d_startIndices, simulation_size);
-    pressure_kernel<<<numBlocks, blockSize>>>(d_positions, d_velocities, d_densities, d_forces, GetFrameTime());
-    update_positions_kernel<<<numBlocks, blockSize>>>(d_positions, d_velocities, d_forces, GetFrameTime());
+    pressure_kernel<<<numBlocks, blockSize>>>(d_positions, d_velocities, d_densities, d_forces, 
+                                            d_spatialLookup, d_startIndices, simulation_size, GetFrameTime());
+    update_positions_kernel<<<numBlocks, blockSize>>>(d_positions, d_velocities, d_forces, simulation_size, GetFrameTime());
 
     CUDA_CHECK(cudaDeviceSynchronize());
 
@@ -132,12 +140,37 @@ void Engine::SimulationStep() {
 
 void Engine::Reset() {
     // Free existing device memory
-    if (d_positions) CUDA_CHECK(cudaFree(d_positions));
-    if (d_velocities) CUDA_CHECK(cudaFree(d_velocities));
-    if (d_densities) CUDA_CHECK(cudaFree(d_densities));
-    if (d_pressures) CUDA_CHECK(cudaFree(d_pressures));
-    if (d_spatialLookup) CUDA_CHECK(cudaFree(d_spatialLookup));
-    if (d_startIndices) CUDA_CHECK(cudaFree(d_startIndices));
+    if (d_positions) {
+        CUDA_CHECK(cudaFree(d_positions));
+        d_positions = nullptr;
+    }
+    if (d_velocities) {
+        CUDA_CHECK(cudaFree(d_velocities));
+        d_velocities = nullptr;
+    }
+    if (d_densities) {
+        CUDA_CHECK(cudaFree(d_densities));
+        d_densities = nullptr;
+    }
+    if (d_pressures) {
+        CUDA_CHECK(cudaFree(d_pressures));
+        d_pressures = nullptr;
+    }
+    if (d_forces) {
+        CUDA_CHECK(cudaFree(d_forces));
+        d_forces = nullptr;
+    }
+    if (d_spatialLookup) {
+        CUDA_CHECK(cudaFree(d_spatialLookup));
+        d_spatialLookup = nullptr;
+    }
+    if (d_startIndices) {
+        CUDA_CHECK(cudaFree(d_startIndices));
+        d_startIndices = nullptr;
+    }
+
+    // Reset simulation size
+    simulation_size = 0;
 
     // Clear host vectors
     positions.clear();
@@ -146,23 +179,25 @@ void Engine::Reset() {
     forces.clear();
     pressures.clear();
     transforms.clear();
-    simulation_size = 0;
+
+    // Ensure CUDA device is synchronized after cleanup
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
 
-void Engine::Populate() {
+void Engine::Populate(int n) {
     // Create particles in a grid pattern
     const float spacing = 0.2f;  // Reduced spacing to fit more particles
-    const int gridSize = 28;     // 28^3 = 21952 particles (slightly more than 20K)
+    const int gridSize = n; //  56^3 = 175616 particles
     simulation_size = gridSize * gridSize * gridSize;
     
-    // Resize host vectors
+    // Resize all host vectors first
     positions.resize(simulation_size);
     velocities.resize(simulation_size);
     densities.resize(simulation_size);
     pressures.resize(simulation_size);
     forces.resize(simulation_size);
     transforms.resize(simulation_size);
-
+ 
     // Initialize particles in a grid
     int particleIndex = 0;
     for (int x = -gridSize/2; x < gridSize/2; x++) {
@@ -205,13 +240,8 @@ void Engine::Populate() {
     }
 
     // Free any existing device memory
-    if (d_positions) CUDA_CHECK(cudaFree(d_positions));
-    if (d_velocities) CUDA_CHECK(cudaFree(d_velocities));
-    if (d_densities) CUDA_CHECK(cudaFree(d_densities));
-    if (d_pressures) CUDA_CHECK(cudaFree(d_pressures));
-    if (d_forces) CUDA_CHECK(cudaFree(d_forces));
-    if (d_spatialLookup) CUDA_CHECK(cudaFree(d_spatialLookup));
-    if (d_startIndices) CUDA_CHECK(cudaFree(d_startIndices));
+
+
 
     // Allocate device memory
     CUDA_CHECK(cudaMalloc(&d_positions, simulation_size * sizeof(float3)));
@@ -228,7 +258,7 @@ void Engine::Populate() {
     std::vector<float3> forces_float3(simulation_size);
     
     for (int i = 0; i < simulation_size; i++) {
-        positions_float3[i] = make_float3(positions[i].x, positions[i].y, positions[i].z);
+        positions_float3[i] = make_float3(positions[i].x, positions[i]  .y, positions[i].z);
         velocities_float3[i] = make_float3(velocities[i].x, velocities[i].y, velocities[i].z);
         forces_float3[i] = make_float3(forces[i].x, forces[i].y, forces[i].z);
     }
@@ -240,23 +270,38 @@ void Engine::Populate() {
     CUDA_CHECK(cudaMemcpy(d_pressures, pressures.data(), simulation_size * sizeof(float), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_forces, forces_float3.data(), simulation_size * sizeof(float3), cudaMemcpyHostToDevice));
 
-    // Print debug info
-    printf("Created %d particles\n", simulation_size);
-    printf("First particle position: (%f, %f, %f)\n", 
-        positions[0].x, positions[0].y, positions[0].z);
+   
+
 }
+
+
+
 
 void Engine::SpawnParticlesAtCenter() {
     // Create a small cube of particles at the center
     const float spacing = particle_radius * 2.0f;
     const int size = 5; // 5x5x5 cube
     
-    // Clear existing particles
+    // Calculate total number of particles
+    int totalParticles = (size + 1) * (size + 1) * (size + 1);
+    
+    // Clear and resize all vectors first
     positions.clear();
     velocities.clear();
+    densities.clear();
+    pressures.clear();
+    forces.clear();
     transforms.clear();
     
+    positions.resize(totalParticles);
+    velocities.resize(totalParticles);
+    densities.resize(totalParticles);
+    pressures.resize(totalParticles);
+    forces.resize(totalParticles);
+    transforms.resize(totalParticles);
+    
     // Create new particles
+    int particleIndex = 0;
     for (int i = -size/2; i <= size/2; i++) {
         for (int j = -size/2; j <= size/2; j++) {
             for (int k = -size/2; k <= size/2; k++) {
@@ -265,22 +310,23 @@ void Engine::SpawnParticlesAtCenter() {
                     static_cast<float>(j) * spacing,
                     static_cast<float>(k) * spacing
                 };
-                positions.push_back(pos);
-                velocities.push_back(Vector3{0.0f, 0.0f, 0.0f});
+                positions[particleIndex] = pos;
+                velocities[particleIndex] = Vector3{0.0f, 0.0f, 0.0f};
+                densities[particleIndex] = 0.0f;
+                pressures[particleIndex] = 0.0f;
+                forces[particleIndex] = Vector3{0.0f, 0.0f, 0.0f};
+                
                 Matrix scale = MatrixScale(particle_radius, particle_radius, particle_radius);
                 Matrix translation = MatrixTranslate(pos.x, pos.y, pos.z);
-                transforms.push_back(MatrixMultiply(scale, translation));
+                transforms[particleIndex] = MatrixMultiply(scale, translation);
+                
+                particleIndex++;
             }
         }
     }
     
-    // Update simulation size and resize vectors
-    simulation_size = positions.size();
-    densities.resize(simulation_size);
-    pressures.resize(simulation_size);
-    forces.resize(simulation_size);
-    velocities.resize(simulation_size);
-    transforms.resize(simulation_size);
+    // Update simulation size
+    simulation_size = totalParticles;
 
     // Free any existing device memory
     if (d_positions) CUDA_CHECK(cudaFree(d_positions));

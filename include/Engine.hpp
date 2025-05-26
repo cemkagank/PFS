@@ -57,7 +57,7 @@ public:
     void Update();
     void SimulationStep();
     void Reset();
-    void Populate();
+    void Populate(int n);
     void ResolveCollisions();
     void UpdateSpatialLookup();
     void ForEachPointinRadius(Vector3 point);
@@ -66,8 +66,9 @@ public:
     unsigned int GetKeyFromHash(unsigned int hash);
     unsigned int HashPosition(int x, int y);
     void SpawnParticlesAtCenter();
+    int GetSimulationSize() { return simulation_size; }
     
 
 };
 
-#endif // ENGINE_HPPs`
+#endif // ENGINE_HPPs

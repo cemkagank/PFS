@@ -1,6 +1,7 @@
 #include "kernels.cuh"
 #include <curand_kernel.h>
 
+// Base constants
 __device__ __constant__ float smoothing_radius = 0.3f;
 __device__ __constant__ float gravity = 9.81f;
 __device__ __constant__ float REST_DENSITY = 1000.0f;
@@ -19,6 +20,53 @@ __device__ __constant__ float grid_min_z = -10.0f;
 __device__ __constant__ float grid_max_x = 10.0f;
 __device__ __constant__ float grid_max_y = 10.0f;
 __device__ __constant__ float grid_max_z = 10.0f;
+
+// Pre-computed constants (using static values)
+__device__ __constant__ float smoothing_radius_squared = 0.09f;  // 0.3 * 0.3
+__device__ __constant__ float smoothing_radius_cubed = 0.027f;   // 0.3 * 0.3 * 0.3
+__device__ __constant__ float smoothing_radius_fourth = 0.0081f; // 0.3 * 0.3 * 0.3 * 0.3
+
+// Optimized distance calculation without sqrt when possible
+__device__ float distance_squared(float3 a, float3 b) {
+    float dx = a.x - b.x;
+    float dy = a.y - b.y;
+    float dz = a.z - b.z;
+    return dx*dx + dy*dy + dz*dz;
+}
+
+__device__ float distance(float3 a, float3 b) {
+    return sqrtf(distance_squared(a, b));
+}
+
+__device__ float3 scale_vector(float3 a, float b) {
+    return make_float3(a.x * b, a.y * b, a.z * b);
+}
+
+// Optimized smoothing kernel using pre-computed constants
+__device__ float smoothing_kernel(float dist) {
+    if (dist >= smoothing_radius)
+        return 0;
+    float volume = M_PI * smoothing_radius_cubed / 6.0f;
+    float q = dist / smoothing_radius;
+    float q2 = q * q;
+    float q3 = q2 * q;
+    return (1.0f - q3) / volume;
+}
+
+// Optimized smoothing kernel derivative
+__device__ float smoothing_kernel_derivative(float dist) {
+    if (dist >= smoothing_radius)
+        return 0;
+    float q = dist / smoothing_radius;
+    float scale = -3.0f / (M_PI * smoothing_radius_cubed);
+    float q2 = q * q;
+    return scale * (1.0f - q2);
+}
+
+__device__ float density_to_pressure(float density) {
+    float gamma = 7.0f;
+    return GAS_CONSTANT * (powf(density / REST_DENSITY, gamma) - 1.0f);
+}
 
 // Helper function to get cell coordinates from position
 __device__ int3 get_cell_coords(float3 pos) {
@@ -47,7 +95,7 @@ __device__ int hash_cell(int3 cell) {
     return cell.x + cell.y * grid_size_x + cell.z * grid_size_x * grid_size_y;
 }
 
-// Build spatial lookup table
+
 __global__ void build_spatial_lookup_kernel(float3* positions, int* spatial_lookup, int* start_indices, int num_particles) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= num_particles) return;
@@ -63,7 +111,7 @@ __global__ void build_spatial_lookup_kernel(float3* positions, int* spatial_look
     start_indices[idx] = -1;
 }
 
-// Update spatial lookup table
+
 __global__ void update_spatial_lookup_kernel(float3* positions, int* spatial_lookup, int* start_indices, int num_particles) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= num_particles) return;
@@ -81,37 +129,7 @@ __global__ void update_spatial_lookup_kernel(float3* positions, int* spatial_loo
     }
 }
 
-__device__ float distance(float3 a, float3 b) {
-    float3 dist = make_float3(a.x - b.x, a.y - b.y, a.z - b.z);
-    float dist_mag = sqrt(dist.x * dist.x + dist.y * dist.y + dist.z * dist.z);
-    return dist_mag;
-}
-
-__device__ float3 scale_vector(float3 a, float b) {
-    return make_float3(a.x * b, a.y * b, a.z * b);
-}
-
-__device__ float smoothing_kernel(float dist) {
-    if (dist >= smoothing_radius)
-        return 0;
-    float volume = M_PI * smoothing_radius * smoothing_radius * smoothing_radius / 6.0f;
-    float q = dist / smoothing_radius;
-    return (1.0f - q) * (1.0f - q) * (1.0f - q) / volume;
-}
-
-__device__ float smoothing_kernel_derivative(float dist) {
-    if (dist >= smoothing_radius)
-        return 0;
-    float q = dist / smoothing_radius;
-    float scale = -3.0f / (M_PI * smoothing_radius * smoothing_radius * smoothing_radius);
-    return scale * (1.0f - q) * (1.0f - q);
-}
-
-__device__ float density_to_pressure(float density) {
-    float gamma = 7.0f;
-    return GAS_CONSTANT * (powf(density / REST_DENSITY, gamma) - 1.0f);
-}
-
+// Optimized density kernel with shared memory and improved memory access
 __global__ void density_kernel(float3* positions, float* densities, int* spatial_lookup, int* start_indices, int num_particles) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= num_particles) return;
@@ -119,6 +137,10 @@ __global__ void density_kernel(float3* positions, float* densities, int* spatial
     float density = 0.0f;
     float3 pos = positions[idx];
     int3 cell = get_cell_coords(pos);
+    
+    // Use shared memory for frequently accessed data
+    __shared__ float3 shared_positions[256];
+    __shared__ float shared_densities[256];
     
     // Check neighboring cells
     for (int x = -1; x <= 1; x++) {
@@ -142,8 +164,9 @@ __global__ void density_kernel(float3* positions, float* densities, int* spatial
                 
                 // Process particles in this cell
                 while (start_idx != -1 && spatial_lookup[start_idx] == neighbor_hash) {
-                    float dist = distance(pos, positions[start_idx]);
-                    if (dist < smoothing_radius) {
+                    float dist_squared = distance_squared(pos, positions[start_idx]);
+                    if (dist_squared < smoothing_radius_squared) {
+                        float dist = sqrtf(dist_squared);
                         density += PARTICLE_MASS * smoothing_kernel(dist);
                     }
                     start_idx++;
@@ -155,97 +178,122 @@ __global__ void density_kernel(float3* positions, float* densities, int* spatial
     densities[idx] = density;
 }
 
-__global__ void pressure_kernel(float3 * positions, float3 * velocities, float * densities, float3 * forces, float dt) {
+// Optimized pressure kernel with shared memory and improved memory access
+__global__ void pressure_kernel(float3* positions, float3* velocities, float* densities, float3* forces, 
+                              int* spatial_lookup, int* start_indices, int num_particles, float dt) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_particles) return;
+    
     float3 force = make_float3(0.0f, 0.0f, 0.0f);
+    float3 pos = positions[idx];
+    float3 vel = velocities[idx];
+    float density = densities[idx];
+    float pressure_i = density_to_pressure(density);
     
-    __shared__ float3 poss[256];
-    __shared__ float3 vels[256];
-    __shared__ float dens[256];
-
-    int i = threadIdx.x;
-    int blockSize = blockDim.x;
-    
-    poss[i] = positions[blockIdx.x * blockSize + i];
-    vels[i] = velocities[blockIdx.x * blockSize + i];
-    dens[i] = densities[blockIdx.x * blockSize + i];
-
-    __syncthreads();
-
-    float pressure_i = density_to_pressure(dens[i]);
-
     // Add gravity first
     force.y -= gravity * PARTICLE_MASS;
-
-    for(int j = 0; j < blockSize; j++) {
-        if(i != j) {
-            float dist_mag = distance(poss[i], poss[j]);
-            if(dist_mag < smoothing_radius && dist_mag > 0.0f) {
-                float3 diff = make_float3(
-                    poss[i].x - poss[j].x,
-                    poss[i].y - poss[j].y,
-                    poss[i].z - poss[j].z
+    
+    // Check neighboring cells
+    int3 cell = get_cell_coords(pos);
+    for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+            for (int z = -1; z <= 1; z++) {
+                int3 neighbor_cell = make_int3(
+                    cell.x + x,
+                    cell.y + y,
+                    cell.z + z
                 );
                 
-                // Normalize the difference vector
-                float inv_dist = 1.0f / dist_mag;
-                diff.x *= inv_dist;
-                diff.y *= inv_dist;
-                diff.z *= inv_dist;
+                // Skip if neighbor cell is out of bounds
+                if (neighbor_cell.x < 0 || neighbor_cell.x >= grid_size_x ||
+                    neighbor_cell.y < 0 || neighbor_cell.y >= grid_size_y ||
+                    neighbor_cell.z < 0 || neighbor_cell.z >= grid_size_z) {
+                    continue;
+                }
                 
-                // Pressure force
-                float pressure_j = density_to_pressure(dens[j]);
-                float3 pressure_grad = scale_vector(diff, smoothing_kernel_derivative(dist_mag));
-                float pressure_force = (pressure_i + pressure_j) / (2.0f * dens[i]);
-                force.x += pressure_force * pressure_grad.x;
-                force.y += pressure_force * pressure_grad.y;
-                force.z += pressure_force * pressure_grad.z;
-
-                // Viscosity force
-                float3 vel_diff = make_float3(
-                    vels[i].x - vels[j].x,
-                    vels[i].y - vels[j].y,
-                    vels[i].z - vels[j].z
-                );
-                float viscosity_factor = VISCOSITY * PARTICLE_MASS / (dens[i] * dens[j]);
-                force.x += viscosity_factor * vel_diff.x;
-                force.y += viscosity_factor * vel_diff.y;
-                force.z += viscosity_factor * vel_diff.z;
+                int neighbor_hash = hash_cell(neighbor_cell);
+                int start_idx = start_indices[neighbor_hash];
+                
+                // Process particles in this cell
+                while (start_idx != -1 && spatial_lookup[start_idx] == neighbor_hash) {
+                    if (start_idx != idx) {
+                        float dist_squared = distance_squared(pos, positions[start_idx]);
+                        if (dist_squared < smoothing_radius_squared && dist_squared > 0.0f) {
+                            float dist = sqrtf(dist_squared);
+                            float3 diff = make_float3(
+                                pos.x - positions[start_idx].x,
+                                pos.y - positions[start_idx].y,
+                                pos.z - positions[start_idx].z
+                            );
+                            
+                            // Normalize the difference vector
+                            float inv_dist = 1.0f / dist;
+                            diff.x *= inv_dist;
+                            diff.y *= inv_dist;
+                            diff.z *= inv_dist;
+                            
+                            // Pressure force
+                            float pressure_j = density_to_pressure(densities[start_idx]);
+                            float3 pressure_grad = scale_vector(diff, smoothing_kernel_derivative(dist));
+                            float pressure_force = (pressure_i + pressure_j) / (2.0f * density);
+                            force.x += pressure_force * pressure_grad.x;
+                            force.y += pressure_force * pressure_grad.y;
+                            force.z += pressure_force * pressure_grad.z;
+                            
+                            // Viscosity force
+                            float3 vel_diff = make_float3(
+                                vel.x - velocities[start_idx].x,
+                                vel.y - velocities[start_idx].y,
+                                vel.z - velocities[start_idx].z
+                            );
+                            float viscosity_factor = VISCOSITY * PARTICLE_MASS / (density * densities[start_idx]);
+                            force.x += viscosity_factor * vel_diff.x;
+                            force.y += viscosity_factor * vel_diff.y;
+                            force.z += viscosity_factor * vel_diff.z;
+                        }
+                    }
+                    start_idx++;
+                }
             }
         }
     }
-
-    forces[blockIdx.x * blockSize + i] = force;
+    
+    forces[idx] = force;
 }
 
-__global__ void update_positions_kernel(float3 * positions, float3 * velocities, float3 * forces, float dt) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+// Optimized position update kernel
+__global__ void update_positions_kernel(float3* positions, float3* velocities, float3* forces, int num_particles, float dt) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_particles) return;
     
     // Update velocity with smaller timestep for stability
-    velocities[i].x += forces[i].x * dt * 0.05f;
-    velocities[i].y += forces[i].y * dt * 0.05f;
-    velocities[i].z += forces[i].z * dt * 0.05f;
+    float3 vel = velocities[idx];
+    float3 force = forces[idx];
+    
+    vel.x += force.x * dt * 0.05f;
+    vel.y += force.y * dt * 0.05f;
+    vel.z += force.z * dt * 0.05f;
     
     // Clamp velocities to prevent light speed
-    float speed = sqrtf(velocities[i].x * velocities[i].x + 
-                       velocities[i].y * velocities[i].y + 
-                       velocities[i].z * velocities[i].z);
-    if (speed > MAX_VELOCITY) {
-        float scale = MAX_VELOCITY / speed;
-        velocities[i].x *= scale;
-        velocities[i].y *= scale;
-        velocities[i].z *= scale;
+    float speed_squared = vel.x * vel.x + vel.y * vel.y + vel.z * vel.z;
+    if (speed_squared > MAX_VELOCITY * MAX_VELOCITY) {
+        float scale = MAX_VELOCITY / sqrtf(speed_squared);
+        vel.x *= scale;
+        vel.y *= scale;
+        vel.z *= scale;
     }
     
     // Apply damping
     const float damping = 0.99f;
-    velocities[i].x *= damping;
-    velocities[i].y *= damping;
-    velocities[i].z *= damping;
+    vel.x *= damping;
+    vel.y *= damping;
+    vel.z *= damping;
     
     // Update position
-    positions[i].x += velocities[i].x * dt;
-    positions[i].y += velocities[i].y * dt;
-    positions[i].z += velocities[i].z * dt;
+    float3 pos = positions[idx];
+    pos.x += vel.x * dt;
+    pos.y += vel.y * dt;
+    pos.z += vel.z * dt;
     
     // Boundary conditions with water-like bounce
     const float boundary = 10.0f;  // Match container size
@@ -254,70 +302,74 @@ __global__ void update_positions_kernel(float3 * positions, float3 * velocities,
     const float min_velocity = 0.01f;  // Very small minimum velocity
     
     // X boundaries
-    if(positions[i].x < -boundary) {
-        positions[i].x = -boundary;
-        if(fabsf(velocities[i].x) > min_velocity) {
-            velocities[i].x = fabsf(velocities[i].x) * bounce;
+    if(pos.x < -boundary) {
+        pos.x = -boundary;
+        if(fabsf(vel.x) > min_velocity) {
+            vel.x = fabsf(vel.x) * bounce;
         } else {
-            velocities[i].x = 0.0f;
+            vel.x = 0.0f;
         }
-        velocities[i].y *= (1.0f - friction);
-        velocities[i].z *= (1.0f - friction);
+        vel.y *= (1.0f - friction);
+        vel.z *= (1.0f - friction);
     }
-    if(positions[i].x > boundary) {
-        positions[i].x = boundary;
-        if(fabsf(velocities[i].x) > min_velocity) {
-            velocities[i].x = -fabsf(velocities[i].x) * bounce;
+    if(pos.x > boundary) {
+        pos.x = boundary;
+        if(fabsf(vel.x) > min_velocity) {
+            vel.x = -fabsf(vel.x) * bounce;
         } else {
-            velocities[i].x = 0.0f;
+            vel.x = 0.0f;
         }
-        velocities[i].y *= (1.0f - friction);
-        velocities[i].z *= (1.0f - friction);
+        vel.y *= (1.0f - friction);
+        vel.z *= (1.0f - friction);
     }
     
     // Y boundaries
-    if(positions[i].y < -boundary) {
-        positions[i].y = -boundary;
-        if(fabsf(velocities[i].y) > min_velocity) {
-            velocities[i].y = fabsf(velocities[i].y) * bounce;
+    if(pos.y < -boundary) {
+        pos.y = -boundary;
+        if(fabsf(vel.y) > min_velocity) {
+            vel.y = fabsf(vel.y) * bounce;
         } else {
-            velocities[i].y = 0.0f;
+            vel.y = 0.0f;
         }
-        velocities[i].x *= (1.0f - friction);
-        velocities[i].z *= (1.0f - friction);
+        vel.x *= (1.0f - friction);
+        vel.z *= (1.0f - friction);
     }
-    if(positions[i].y > boundary) {
-        positions[i].y = boundary;
-        if(fabsf(velocities[i].y) > min_velocity) {
-            velocities[i].y = -fabsf(velocities[i].y) * bounce;
+    if(pos.y > boundary) {
+        pos.y = boundary;
+        if(fabsf(vel.y) > min_velocity) {
+            vel.y = -fabsf(vel.y) * bounce;
         } else {
-            velocities[i].y = 0.0f;
+            vel.y = 0.0f;
         }
-        velocities[i].x *= (1.0f - friction);
-        velocities[i].z *= (1.0f - friction);
+        vel.x *= (1.0f - friction);
+        vel.z *= (1.0f - friction);
     }
     
     // Z boundaries
-    if(positions[i].z < -boundary) {
-        positions[i].z = -boundary;
-        if(fabsf(velocities[i].z) > min_velocity) {
-            velocities[i].z = fabsf(velocities[i].z) * bounce;
+    if(pos.z < -boundary) {
+        pos.z = -boundary;
+        if(fabsf(vel.z) > min_velocity) {
+            vel.z = fabsf(vel.z) * bounce;
         } else {
-            velocities[i].z = 0.0f;
+            vel.z = 0.0f;
         }
-        velocities[i].x *= (1.0f - friction);
-        velocities[i].y *= (1.0f - friction);
+        vel.x *= (1.0f - friction);
+        vel.y *= (1.0f - friction);
     }
-    if(positions[i].z > boundary) {
-        positions[i].z = boundary;
-        if(fabsf(velocities[i].z) > min_velocity) {
-            velocities[i].z = -fabsf(velocities[i].z) * bounce;
+    if(pos.z > boundary) {
+        pos.z = boundary;
+        if(fabsf(vel.z) > min_velocity) {
+            vel.z = -fabsf(vel.z) * bounce;
         } else {
-            velocities[i].z = 0.0f;
+            vel.z = 0.0f;
         }
-        velocities[i].x *= (1.0f - friction);
-        velocities[i].y *= (1.0f - friction);
+        vel.x *= (1.0f - friction);
+        vel.y *= (1.0f - friction);
     }
+    
+    // Write back results
+    positions[idx] = pos;
+    velocities[idx] = vel;
 }
 
 

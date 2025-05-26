@@ -13,7 +13,7 @@ int main() {
     Window window = Window(1920,1080);
     window.Init();
     Engine engine = Engine();
-    engine.Populate();
+    engine.Populate(56);
     bool paused = true;
     bool fare = false;
     auto updatems = std::chrono::milliseconds(0);
@@ -30,12 +30,15 @@ int main() {
     cam.fovy = 45.0f;
     cam.projection = CAMERA_PERSPECTIVE;
     rlEnableDepthTest();
-
+    bool draw = false;
 
     while (!WindowShouldClose())
     {
         if (IsKeyPressed(KEY_TAB))
             fare = !fare;
+
+        if (IsKeyPressed(KEY_F))
+            draw = !draw;
 
         if (fare) {
             UpdateCamera(&cam,CAMERA_FREE);
@@ -44,6 +47,7 @@ int main() {
         BeginDrawing();
         ClearBackground(GRAY);
         BeginMode3D(cam);
+        if(draw)
             engine.Draw();
         EndMode3D();
             ui.Render();
