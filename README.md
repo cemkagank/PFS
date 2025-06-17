@@ -16,13 +16,10 @@ This project is a particle-based computational fluid dynamics (CFD) application,
 * [X] Particle lookup optimizations
 * [X] RAII handles
 * [X] Transformd to 3D
-* [ ] Imitate Water Behaviour
-* [ ] First CUDA kernel
-* [ ] Add viscocity
+* [X] Imitate Water Behaviour
+* [X] First CUDA kernel
+* [X] Add viscocity
 * [ ] Grab , Throw forces
-* [ ] Comparison with well known cfd projects
-* [ ] Advanced visualiton options
-* [ ] Link and Document optimizations
 
 ## Dependencies
 - `raylib` (Must be installed on system DYNAMIC)
@@ -41,4 +38,9 @@ This project is a particle-based computational fluid dynamics (CFD) application,
   cmake --build build/
   ./build/bin/fluids
 ```
+## Important
+
+You need te go to raylib.h and change the float3 definitions to whatever you like. For example float3_r. Otherwise you cannot compile the project beacuse of type mismatch between cuda and raylib. 
+
+
 
