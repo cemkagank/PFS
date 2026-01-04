@@ -10,8 +10,13 @@
 
 
 int main() {
-    Window window = Window(1920,1080);
+    // Initialize window first, then get dimensions if needed
+    // Default to 1920x1080, or use monitor dimensions after init
+    Window window = Window(1920, 1080);
     window.Init();
+    
+    // On macOS with Retina, GetScreenWidth/Height return the actual window size
+    // which may differ from the logical size due to DPI scaling
     Engine engine = Engine();
     engine.Populate();
     bool paused = true;
