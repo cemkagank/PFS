@@ -70,13 +70,10 @@ public:
     void SimulationStep();
     void Reset();
     void Populate();
-    void ResolveCollisions();
     void UpdateSpatialLookup();
-    void ForEachPointinRadius(Vector3 point);
     std::pair<int, int > PositionToCellCoord(Vector3 point);
     unsigned int HashCell(int cellx, int celly);
     unsigned int GetKeyFromHash(unsigned int hash);
-    unsigned int HashPosition(int x, int y);
     void SpawnParticlesAtCenter();
 };
 

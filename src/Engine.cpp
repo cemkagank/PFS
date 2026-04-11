@@ -216,58 +216,6 @@ void Engine::Update() {
     }
 }
 
-void Engine::ResolveCollisions() {
-    const float dampening = 0.6f;        // Less dampening on collision
-    const float epsilon = 0.1f;          // Boundary buffer
-    const float friction = 0.98f;        // Reduced friction to allow sliding
-    
-    #pragma omp parallel for
-    for (int i = 0; i < simulation_size; i++) {
-        bool collision = false;
-        
-        // X-axis collisions with less dampening
-        if (positions[i].x < container.min.x + epsilon) {
-            positions[i].x = container.min.x + epsilon;
-            velocities[i].x *= -dampening;
-            collision = true;
-        }
-        if (positions[i].x > container.max.x - epsilon) {
-            positions[i].x = container.max.x - epsilon;
-            velocities[i].x *= -dampening;
-            collision = true;
-        }
-        
-        // Y-axis collisions
-        if (positions[i].y < container.min.y + epsilon) {
-            positions[i].y = container.min.y + epsilon;
-            velocities[i].y *= -dampening;
-            collision = true;
-        }
-        if (positions[i].y > container.max.y - epsilon) {
-            positions[i].y = container.max.y - epsilon;
-            velocities[i].y *= -dampening;
-            collision = true;
-        }
-        
-        // Z-axis collisions with less dampening
-        if (positions[i].z < container.min.z + epsilon) {
-            positions[i].z = container.min.z + epsilon;
-            velocities[i].z *= -dampening;
-            collision = true;
-        }
-        if (positions[i].z > container.max.z - epsilon) {
-            positions[i].z = container.max.z - epsilon;
-            velocities[i].z *= -dampening;
-            collision = true;
-        }
-        
-        // Apply lighter friction when colliding
-        if (collision) {
-            velocities[i].x *= friction;
-            velocities[i].z *= friction;
-        }
-    }
-}
 
 void Engine::Reset() {
     positions.clear();
@@ -345,27 +293,6 @@ void Engine::UpdateSpatialLookup(){
     }
 }
 
-void Engine::ForEachPointinRadius(Vector3 point) {
-    auto [cellx, celly] = PositionToCellCoord(point);
-    float squared_radius = smoothing_radius * smoothing_radius;
-
-    for (int i = -1; i <= 1; i++) {
-        for (int j = -1; j <= 1; j++) {
-            unsigned int key = GetKeyFromHash(HashCell(cellx + i, celly + j));
-            if (start_indices[key] != -1) {
-                for (size_t k = start_indices[key]; k < spatial_lookup.size(); k++) {
-                    if (spatial_lookup[k].second != key) break;
-                    size_t index = spatial_lookup[k].first;
-                    Vector3 dist = positions[index] - point;
-                    float squared_distance = Vector3Length(dist);
-                    if (squared_distance < squared_radius) {
-                        densities[index] += CalculateDensity(point);
-                    }
-                }
-            }
-        }
-    }
-}
 
 std::pair<int, int> Engine::PositionToCellCoord(Vector3 point) {
     int cellx = point.x  / smoothing_radius;
