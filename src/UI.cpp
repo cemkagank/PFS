@@ -49,15 +49,15 @@ void UI::Render() {
         ImGui::Text("Value"); ImGui::NextColumn();
         ImGui::Separator();
         ImGui::Text("Update Time"); ImGui::NextColumn();
-        ImGui::Text("%lims", updatems.count()); ImGui::NextColumn();
+        ImGui::Text("%lldms", (long long)updatems.count()); ImGui::NextColumn();
         ImGui::Text("Simulation Time"); ImGui::NextColumn();
-        ImGui::Text("%lius", simms.count()); ImGui::NextColumn();
+        ImGui::Text("%lldus", (long long)simms.count()); ImGui::NextColumn();
         ImGui::Text("Frame Time"); ImGui::NextColumn();
         ImGui::Text("%.fms", GetFrameTime() * 1000); ImGui::NextColumn();
         ImGui::Text("FPS"); ImGui::NextColumn();
         ImGui::Text("%i", GetFPS()); ImGui::NextColumn();
         ImGui::Text("Memory Usage"); ImGui::NextColumn();
-        ImGui::Text("%likb",get_mem()); ImGui::NextColumn();
+        ImGui::Text("%ldkb", get_mem()); ImGui::NextColumn();
         ImGui::End();
     }
     rlImGuiEnd();

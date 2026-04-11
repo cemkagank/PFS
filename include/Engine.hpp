@@ -3,14 +3,21 @@
 #include <vector>
 #include <raylib.h>
 
-typedef struct box {
+struct box {
     Vector3 max;
     Vector3 min;
-    Vector3 boxSize = { max.x - min.x, max.y - min.y, max.z - min.z };
-    void Draw(){
-        DrawCubeWires(Vector3{ (min.x + max.x) / 2.0f, (min.y + max.y) / 2.0f, (min.z + max.z) / 2.0f }, boxSize.x, boxSize.y, boxSize.z, RED);
+    Vector3 boxSize;
+
+    box() : max{}, min{}, boxSize{} {}
+    box(Vector3 max_, Vector3 min_)
+        : max(max_), min(min_),
+          boxSize{ max_.x - min_.x, max_.y - min_.y, max_.z - min_.z } {}
+
+    void Draw() {
+        Vector3 center{ (min.x + max.x) / 2.0f, (min.y + max.y) / 2.0f, (min.z + max.z) / 2.0f };
+        DrawCubeWires(center, boxSize.x, boxSize.y, boxSize.z, RED);
     }
-} box;
+};
 
 
 class Engine {

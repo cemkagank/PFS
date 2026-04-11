@@ -1,5 +1,4 @@
 #include "Engine.hpp"
-#include "time.h"
 #include <cmath>
 #include <cstddef>
 #include <raymath.h>
@@ -18,7 +17,7 @@ float Engine::particle_radius = 0.2f;                     // Default value
 float Engine::particle_color[4] = {0, 0, 1, 1};           // blue
 
 Engine::Engine() {
-    container = box{Vector3{20,20,20},Vector3{-20,-20,-20}};
+    container = box(Vector3{20,20,20}, Vector3{-20,-20,-20});
     
     // Smaller particles for better fluid resolution
     particle_radius = 0.15f;
@@ -504,7 +503,7 @@ void Engine::SpawnParticlesAtCenter() {
     forces.resize(simulation_size);
     
     // Debug output
-    TraceLog(LOG_INFO, "Spawned 100 particles at center. Total particles: %d", simulation_size);
+    TraceLog(LOG_INFO, "Spawned 1000 particles at center. Total particles: %d", simulation_size);
 }
 
 Vector3 Engine::CalculateViscosityForce(Vector3 point) {
