@@ -1,11 +1,9 @@
-#version 330 core
+#version 330
 
-in vec3 fragColor;  // Color from the vertex shader
-
+in vec4 fragColor;
 out vec4 finalColor;
 
-void main() {
-    // Set the fragment color
-    finalColor = vec4(fragColor, 1.0);
+void main()
+{
+    finalColor = fragColor;
 }
-

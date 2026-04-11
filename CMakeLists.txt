@@ -117,6 +117,14 @@ set_target_properties(fluids PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
 
+# Copy shaders to output directory so the executable can find them at runtime
+add_custom_command(TARGET fluids POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders
+        ${CMAKE_BINARY_DIR}/bin/shaders
+    COMMENT "Copying shaders to output directory"
+)
+
 # Include directories
 target_include_directories(fluids PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include

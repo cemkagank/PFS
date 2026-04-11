@@ -32,6 +32,8 @@ Engine::Engine() {
     particleMesh = GenMeshSphere(1.0f, 8, 8);
     
     // Load material with adjusted properties
+    UploadMesh(&particleMesh, false);
+
     mat = LoadMaterialDefault();
     mat.maps[MATERIAL_MAP_DIFFUSE].color = Color{
         (unsigned char)(particle_color[0] * 255),
@@ -39,7 +41,10 @@ Engine::Engine() {
         (unsigned char)(particle_color[2] * 255),
         (unsigned char)(particle_color[3] * 255)
     };
-    UploadMesh(&particleMesh, false);
+
+    // Load instancing shader (copied to bin/shaders/ at build time)
+    shader = LoadShader("shaders/instancing.vs", "shaders/instancing.fs");
+    mat.shader = shader;
 }
 
 void Engine::Draw() {
