@@ -1,6 +1,7 @@
 #ifndef ENGINE_HPP
 #define ENGINE_HPP
 #include <vector>
+#include <tuple>
 #include <raylib.h>
 
 struct box {
@@ -45,10 +46,8 @@ private:
     float CalculateDensity(Vector3 point);
     float DensityToPressure(float density);
     float CalculateSharedPressure(float dens1, float dens2);   
-    Vector3 CalculatePressureForce(Vector3 point);
-    Vector3 CalculateViscosityForce(Vector3 point);
-
-    Color Interpolate(int index);
+    Vector3 CalculatePressureForce(Vector3 point, float densPoint);
+    Vector3 CalculateViscosityForce(Vector3 point, Vector3 pointVelocity);
 
 public:
     static float particle_radius;
@@ -71,8 +70,8 @@ public:
     void Reset();
     void Populate();
     void UpdateSpatialLookup();
-    std::pair<int, int > PositionToCellCoord(Vector3 point);
-    unsigned int HashCell(int cellx, int celly);
+    std::tuple<int, int, int> PositionToCellCoord(Vector3 point);
+    unsigned int HashCell(int cellx, int celly, int cellz);
     unsigned int GetKeyFromHash(unsigned int hash);
     void SpawnParticlesAtCenter();
 };
