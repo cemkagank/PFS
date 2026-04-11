@@ -18,8 +18,6 @@ class UI {
     public:     
     UI(Engine &engine, std::chrono::milliseconds &up, std::chrono::microseconds &sim);
     void Render();
-    void Toggle();
-    void Extend();
     
 };
 
@@ -32,4 +30,4 @@ class UI {
 
 
 
-#endif //UI_HPPs
+#endif // UI_HPP

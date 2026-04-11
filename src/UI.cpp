@@ -21,7 +21,7 @@ void UI::Render() {
     ImGui::Begin("Settings");
     ImGui::Checkbox("Diagnostics", &diag);
     ImGui::SliderFloat("Smoothing Radius", &engine.smoothing_radius, 1, 100);
-    ImGui::SliderFloat("Gravity", &engine.gravity, 0.1, 1);
+    ImGui::SliderFloat("Gravity", &engine.gravity, -50.0f, 0.0f);
     ImGui::SliderFloat("Target Density", &engine.targetDensity, 0.1, 7);
     ImGui::SliderFloat("Pressure Multiplier", &engine.pressureMultiplier, 0.000001f, 0.000010f, "%.6f");
     ImGui::ColorEdit3("Particle Color", engine.particle_color);
@@ -49,15 +49,15 @@ void UI::Render() {
         ImGui::Text("Value"); ImGui::NextColumn();
         ImGui::Separator();
         ImGui::Text("Update Time"); ImGui::NextColumn();
-        ImGui::Text("%lims", updatems.count()); ImGui::NextColumn();
+        ImGui::Text("%lldms", (long long)updatems.count()); ImGui::NextColumn();
         ImGui::Text("Simulation Time"); ImGui::NextColumn();
-        ImGui::Text("%lius", simms.count()); ImGui::NextColumn();
+        ImGui::Text("%lldus", (long long)simms.count()); ImGui::NextColumn();
         ImGui::Text("Frame Time"); ImGui::NextColumn();
         ImGui::Text("%.fms", GetFrameTime() * 1000); ImGui::NextColumn();
         ImGui::Text("FPS"); ImGui::NextColumn();
         ImGui::Text("%i", GetFPS()); ImGui::NextColumn();
         ImGui::Text("Memory Usage"); ImGui::NextColumn();
-        ImGui::Text("%likb",get_mem()); ImGui::NextColumn();
+        ImGui::Text("%ldkb", get_mem()); ImGui::NextColumn();
         ImGui::End();
     }
     rlImGuiEnd();

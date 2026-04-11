@@ -1,16 +1,24 @@
 #ifndef ENGINE_HPP
 #define ENGINE_HPP
 #include <vector>
+#include <tuple>
 #include <raylib.h>
 
-typedef struct box {
+struct box {
     Vector3 max;
     Vector3 min;
-    Vector3 boxSize = { max.x - min.x, max.y - min.y, max.z - min.z };
-    void Draw(){
-        DrawCubeWires(Vector3{ (min.x + max.x) / 2.0f, (min.y + max.y) / 2.0f, (min.z + max.z) / 2.0f }, boxSize.x, boxSize.y, boxSize.z, RED);
+    Vector3 boxSize;
+
+    box() : max{}, min{}, boxSize{} {}
+    box(Vector3 max_, Vector3 min_)
+        : max(max_), min(min_),
+          boxSize{ max_.x - min_.x, max_.y - min_.y, max_.z - min_.z } {}
+
+    void Draw() {
+        Vector3 center{ (min.x + max.x) / 2.0f, (min.y + max.y) / 2.0f, (min.z + max.z) / 2.0f };
+        DrawCubeWires(center, boxSize.x, boxSize.y, boxSize.z, RED);
     }
-} box;
+};
 
 
 class Engine {
@@ -38,10 +46,8 @@ private:
     float CalculateDensity(Vector3 point);
     float DensityToPressure(float density);
     float CalculateSharedPressure(float dens1, float dens2);   
-    Vector3 CalculatePressureForce(Vector3 point);
-    Vector3 CalculateViscosityForce(Vector3 point);
-
-    Color Interpolate(int index);
+    Vector3 CalculatePressureForce(Vector3 point, float densPoint);
+    Vector3 CalculateViscosityForce(Vector3 point, Vector3 pointVelocity);
 
 public:
     static float particle_radius;
@@ -63,13 +69,10 @@ public:
     void SimulationStep();
     void Reset();
     void Populate();
-    void ResolveCollisions();
     void UpdateSpatialLookup();
-    void ForEachPointinRadius(Vector3 point);
-    std::pair<int, int > PositionToCellCoord(Vector3 point);
-    unsigned int HashCell(int cellx, int celly);
+    std::tuple<int, int, int> PositionToCellCoord(Vector3 point);
+    unsigned int HashCell(int cellx, int celly, int cellz);
     unsigned int GetKeyFromHash(unsigned int hash);
-    unsigned int HashPosition(int x, int y);
     void SpawnParticlesAtCenter();
 };
 
